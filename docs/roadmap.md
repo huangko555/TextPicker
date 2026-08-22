@@ -1,0 +1,71 @@
+# 执行路线图
+
+执行顺序的权威来源（自 v6.1 设计案 §8.2 迁移，设计稿原件在仓库外留存）。每个 Phase 结束为过门点：汇报测试结果与关键决策，确认后进下一个。执行中出现的新问题按证据局部决策并记 ADR，只在范围变更时升级。
+
+## Phase 0 — 契约冻结测试（7 项，先于一切实现，全部通过才继续）
+
+| # | 测试 | 验收 |
+|---|---|---|
+| 1 | Raw Input 所有权 | 同进程双注册冲突复现（后注册者抢占）；注入模式无冲突；Owned fail-fast（`GetRegisteredRawInputDevices` 检测到非自身注册时抛 `RawInputRegistrationConflict`，不覆盖） |
+| 2 | 强类型 ID + 显式捕获语义 | `CaptureCurrentSelectionAsync` 完成后 `LastCapture` 不变、无 `SelectionCaptured` 事件、手势状态不变 |
+| 3 | CandidateReady 零 UIA | 假后端 sleep，CandidateReady 必须立即到达（`CandidateTargetSnapshot` 结构上无 UIA 字段） |
+| 4 | 几何可空 | 正文成功 + `GeometryCompleteness.None` 合法发布，不判失败 |
+| 5 | exactly-one terminal | ∀ generation：CandidateReady==1、terminal 互斥唯一、Captured 后 Invalidated≤1、被过滤手势不产生 generation（无洞） |
+| 6 | 三 lane COM 隔离 | 结构测试：跨 lane DTO 类型白名单不含任何 COM 接口 |
+| 7 | RunEpoch | Stop → 注入迟到 UIA 回调 → Start → 旧 epoch 回调不产生任何公开事件 |
+
+注：Phase 0 的门面为**最小实现**（seam 可注入），Phase 1–2 用真实状态机 / 输入源 / lane 执行器替换内部件，7 项测试持续作为回归守卫。
+
+## Phase 1 — Core
+
+契约类型 + 手势状态机（合成输入记录流驱动）+ TextNormalizer + 几何解析 + 身份仲裁 + 全部单测（含 5 号不变式的 property-based 全路径、仲裁黄金迹线回放）。
+
+## Phase 2 — 输入与门面
+
+自持隐藏窗口 WM_INPUT 现场冒烟（方案唯一需现场验证的技术假设）→ `OwnedRawInputSource`（含 fail-fast）→ `FocusTargetEventSource` → 三 lane 执行器 → 门面串行队列 / 仲裁 / 失效跟踪 / 豁免表 → `TargetPolicy`（含全屏检测）。
+
+## Phase 3 — UIA
+
+`UiaSelectionBackend`（内容 / LocalContext / 几何 / 方向锚点 / 新鲜度证据 / 确认读）+ `CaretProbeChain`（无 TSF 四级）+ `BackendRouter` seam + Windows 测试（进程内 WPF 宿主，异步断言不阻塞 UI 线程）。
+
+## Phase 4 — 调试面板
+
+PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+来源 / 剪贴板序列号 / Counters / 全屏暂停状态 / 宿主 DPI 感知警告）；事件流（Diagnostics 阶段行 + Captured/Failed 完整字段，正文默认打码）；交互区（五手势开关、排除进程、Probe includeText、AllowWholeValueBackend / 内容流订阅 / EnrichSurrounding / PauseWhenFullScreen、RegisterConsumerWindow 演示）。
+
+## Phase 5 — 全量验证
+
+`dotnet test` 全绿 + 冒烟矩阵（真实机器，真人手势操作，结果填入下方三态表）。
+
+## 过门记录
+
+| Phase | 日期 | 结果 | 备注 |
+|---|---|---|---|
+| 0 | 2026-08-23 | ✅ 17/17 全绿（Core 4 + Windows 13） | 7 项契约冻结测试全部落地并通过；Raw Input 双注册冲突在本机复现（后注册者抢占 + fail-fast）；门面为 seam 注入的最小实现，Phase 1–2 替换内部件后测试持续作回归守卫。Phase 0 执行期局部决策见下。 |
+
+### Phase 0 执行期局部决策（依 §11 授权：按证据局部决策并记录）
+
+1. **数据记录用 `{ get; init; }` 属性而非公共字段**：计划 §5/§6 全码用了字段写法，但 §1 明文「不可变结果」——以属性落实不可变意图，类型名/成员名/枚举值与计划一致。`SelectionPickerOptions` 例外（按计划可变 + 整体替换）。
+2. **CsWin32 清单**：`GetProcessDpiAwarenessContext`/`GetDpiForProcess` 在 CsWin32 0.3.298 元数据中不存在，暂不列入；Phase 2 DPI 防护时另选（如 `GetWindowDpiAwarenessContext`）。
+3. **Stop() 终结在飞 generation 为 Failed(Cancelled)**：使 exactly-one-terminal 不变式跨 Stop/Start 严格成立（否则 Stop 边界出现无 terminal 的 generation）。迟到回调仍完全静默（契约 #7）。
+4. **被过滤手势完全静默**：不发 Diagnostics 事件（§4「静默完成」从严解释），计数器含 FilteredGestures 供诊断；`CaptureFailureReason.OwnProcess/ExcludedProcess` 枚举值保留给显式/Probe 路径。
+5. **显式捕获未运行时抛 InvalidOperationException**、**Start 重复调用抛异常**：计划未规定，按误用处理（fail-fast）。
+6. **CancelRequest 使查询 Task 以 Fail(Cancelled) 收口**（不悬挂）；COM 在飞调用不中止，符合「放弃等待而非中止 COM」。
+7. **新会话入口**：本表 + ADR + README 即入口；v6.1 设计稿原件在仓库外留存（不入仓）。
+
+## 冒烟矩阵（三态：Known-good / Known-bad / Unknown，附版本号）
+
+环境：本机双显示器（主 2560×1440 @100%，副 2560×1440 物理 @150%）；Chrome 151.0.4129.93；Edge 151.0.7922.173；Office16 Word。
+
+| 场景 | 预期 | 结果 | 版本 |
+|---|---|---|---|
+| 记事本：拖选 / 双击 / 三击 / Ctrl+A / Shift+方向键 / 反向多行 | Captured，剪贴板序列号不变，锚点在释放端 | | |
+| Word：同上 + Ctrl+Shift+Home | 同上 | | |
+| Chrome 纯文本页 | 实测填三态（138+ 原生 UIA） | | |
+| Chrome 标准输入框 / contenteditable | 实测填三态 | | |
+| Chrome：跨域 iframe、Google Docs、PDF 查看器 | 实测填三态，不预设失败 | | |
+| Edge：同 Chrome 子集 | 实测填三态 | | |
+| 管理员记事本 | AccessDenied 可诊断 | | |
+| 全屏视频 / 游戏 | 自动暂停 | | |
+| 调试面板自身窗口划选 | 不产生候选（OwnProcess） | | |
+| RegisterConsumerWindow 演示：点击消费者按钮 | 不打断当前候选 | | |
+| 跨 DPI 显示器（主 100% ↔ 副 150%）选择 | 锚点在结束端附近且不越工作区 | | |

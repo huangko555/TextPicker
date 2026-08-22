@@ -1,0 +1,25 @@
+# ADR-0001 Raw Input 注册权（owned / injected / broker 三模式）
+
+**状态**：Accepted（v6.1 定案，三轮外部审查终判 Go，勿翻案）
+**Phase**：0（fail-fast 部分） / 2（完整）
+
+## 背景
+
+微软明文：Raw Input 每设备类**进程内只能有一个注册窗口**（最后一次调用者生效），且库不应自行 `RegisterRawInputDevices`。InputCue 等宿主已有自己的 Raw Input 注册，模块若自行注册会相互抢占。
+
+## 决策
+
+- 内部 seam `IInputEventSource`；默认 `OwnedRawInputSource`：`CreateWindowEx` 隐藏**顶级**窗口 + 自有线程消息泵（WM_INPUT 的 `hwndTarget` 必须是顶级窗口，message-only 不在文档化契约内）。
+- **Owned Start fail-fast**：注册前用 `GetRegisteredRawInputDevices` 查询键盘/鼠标当前注册归属；目标 HWND 非自身 → 抛 `RawInputRegistrationConflict`，**绝不悄悄覆盖**。真正的同进程组合必须走 broker / 注入。
+- 宿主注入：InputCue 等已有 Raw Input 的宿主注入自己的 broker，模块不再注册。
+- 可选 `RawInputBroker` 进程级单例：宿主与模块共用一个注册窗口分发事件。
+- **注入 DTO = 归一化未分类输入**：KeyDown/KeyUp+VK+ModifierSnapshot、PointerDown/Up/Wheel+PhysicalPoint、MessageTimestamp、前台 HWND/PID 快照。分类只归 Core 状态机，防宿主/模块双重分类语义漂移。
+
+## 后果
+
+Phase 0 契约测试 #1 锚定冲突复现与 fail-fast 行为。
+
+## 实现记录
+
+- [x] Phase 0：`RawInputRegistrationGuard`（Query/EnsureOwnable）+ `RawInputRegistrationConflict` + 契约测试 #1（本机复现双注册抢占）
+- [ ] Phase 2：`OwnedRawInputSource` 隐藏窗口 / 自持线程泵 / 注入模式 / broker / 归一化输入 DTO（落于 Core）
