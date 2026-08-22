@@ -42,6 +42,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 |---|---|---|---|
 | 0 | 2026-08-23 | ✅ 17/17 全绿（Core 4 + Windows 13） | 7 项契约冻结测试全部落地并通过；Raw Input 双注册冲突在本机复现（后注册者抢占 + fail-fast）；门面为 seam 注入的最小实现，Phase 1–2 替换内部件后测试持续作回归守卫。局部决策见下。 |
 | 1 | 2026-08-23 | ✅ 84/84 全绿（Core 59 + Windows 25） | 状态机/TextNormalizer/GeometryBuilder/Arbiter/Options 校验 + 黄金迹线回放 + property-based 不变式（8 种子）。局部决策见下。 |
+| 2 | 2026-08-23 | ✅ 102/102 全绿（Core 59 + Windows 43） | OwnedRawInputSource（自持线程+隐藏窗口+INPUTSINK+fail-fast）+ WM_INPUT 现场冒烟（SendInput 合成键盘实测可达）+ QueryRunner（超时/熔断/卡死置换/孤儿上限/quarantine）+ LaneRoutedBackend + 门面失效跟踪（Esc/点外/前台/TargetGone + 消费者豁免）+ WinEvent 焦点源 + 全屏暂停。局部决策见下。 |
 
 ### Phase 1 执行期局部决策
 
@@ -81,3 +82,13 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | 调试面板自身窗口划选 | 不产生候选（OwnProcess） | | |
 | RegisterConsumerWindow 演示：点击消费者按钮 | 不打断当前候选 | | |
 | 跨 DPI 显示器（主 100% ↔ 副 150%）选择 | 锚点在结束端附近且不越工作区 | | |
+
+### Phase 2 执行期局部决策
+
+1. **SendInput 合成输入可达 Raw Input**（冒烟实测）：自持隐藏顶级窗口 + WM_INPUT 泵假设成立；合成输入可入自动化测试。Phase 5 冒烟仍以真人手势为准。
+2. **Capture lane 串行实现**：QueryRunner 对重叠请求快速失败（WorkerBusy）；LaneRoutedBackend 以信号量实现 FIFO 串行。手势 > 显式优先级调度由 Arbiter 模型承接（v1 FIFO，完整接入留后续）。
+3. **Owned 注册用 RIDEV_INPUTSINK**（后台无焦点接收的必要条件）；fail-fast 在窗口创建后、注册前执行。
+4. **纯移动 WM_INPUT 不翻译不上抛**（无按键/滚轮位时直接跳过，减轻状态机负担）。
+5. **FocusTarget v1 = Win32 浅上下文**（PID/进程名/HWND/窗口类）；UIA 富化（ControlType/FrameworkId 等）在 Phase 3。
+6. **消息时间 32 位回绕**（~49.7 天边界）可能产生一次性误判，接受并文档注明。
+7. **消费者窗口豁免同时覆盖候选与失效**（点工具条/拖工具条既不产生候选也不触发 OutsideClick/ForegroundChanged 失效）。

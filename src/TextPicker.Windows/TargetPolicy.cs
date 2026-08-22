@@ -43,7 +43,12 @@ internal readonly struct GesturePolicyContext
 
 internal sealed class DefaultTargetPolicy : ITargetPolicy
 {
+    /// <summary>全屏探测注入点（默认真实检测；测试可注入假件）。</summary>
+    private readonly Func<bool> _fullScreenProbe;
+
     public static DefaultTargetPolicy Instance { get; } = new();
+
+    public DefaultTargetPolicy(Func<bool>? fullScreenProbe = null) => _fullScreenProbe = fullScreenProbe ?? FullScreenWindowDetector.IsForegroundWindowFullScreen;
 
     public PolicyFilterReason FilterGesture(in GesturePolicyContext context)
     {
@@ -82,11 +87,18 @@ internal sealed class DefaultTargetPolicy : ITargetPolicy
             }
         }
 
-        // 全屏暂停接入点：Phase 2 FullScreenWindowDetector（ADR-0006 之前的 TargetPolicy 完整形态）。
+        if (options.PauseWhenFullScreen && _fullScreenProbe())
+        {
+            return PolicyFilterReason.FullScreenPaused;
+        }
+
         return PolicyFilterReason.None;
     }
 
-    private static class ProcessNameResolver
+    /// <summary>PID → 进程名解析（缓存 + 容错；门面焦点跟踪共用）。</summary>
+    internal static string? ResolveProcessName(int processId) => ProcessNameResolver.ResolveOrNull(processId);
+
+    internal static class ProcessNameResolver
     {
         private static readonly Dictionary<int, string?> Cache = new();
 

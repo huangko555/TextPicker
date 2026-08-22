@@ -12,6 +12,8 @@ internal sealed class FakeGestureFeed : ISelectionGestureFeed
     public event EventHandler<InterruptDetectedEventArgs>? InterruptDetected;
 
 #pragma warning disable CS0067 // 由真实输入源路径触发；假件仅按需使用
+    public event EventHandler<PlainClickEventArgs>? PlainClickObserved;
+
     public event EventHandler<GestureDroppedEventArgs>? GestureDropped;
 #pragma warning restore CS0067
 
@@ -26,6 +28,13 @@ internal sealed class FakeGestureFeed : ISelectionGestureFeed
         {
             Epoch = epochOverride != default ? epochOverride : Volatile.Read(ref _epoch),
             Kind = kind,
+        });
+
+    public void RaisePlainClick(nint foregroundWindowHandle = 0x2222)
+        => PlainClickObserved?.Invoke(this, new PlainClickEventArgs
+        {
+            Epoch = Volatile.Read(ref _epoch),
+            Click = new PlainClickObservation(new PhysicalScreenPoint(1, 1), new PhysicalScreenPoint(2, 2), 1000, new ForegroundTargetSnapshot(foregroundWindowHandle, 9999)),
         });
 
     public void Raise(
@@ -66,12 +75,12 @@ internal sealed class FakeBackend : ISelectionBackend
         return _handler(request, ct);
     }
 
-    public static BackendReadResult Ok(string text = "captured-text", GeometryCompleteness completeness = GeometryCompleteness.RectsOnly) => new()
+    public static BackendReadResult Ok(string text = "captured-text", GeometryCompleteness completeness = GeometryCompleteness.RectsOnly, int targetProcessId = 1, nint targetWindowHandle = 0) => new()
     {
         Success = true,
         Content = new SelectionContent { Text = text, ReturnedLength = text.Length },
         Geometry = new SelectionGeometry { Completeness = completeness },
-        Target = new TargetContext { ProcessId = 1, ProcessName = "fake-target" },
+        Target = new TargetContext { ProcessId = targetProcessId, ProcessName = "fake-target", WindowHandle = targetWindowHandle },
         AnchorRect = new PhysicalScreenRect(10, 10, 20, 40),
         AnchorSource = AnchorSource.MouseReleasePoint,
         Backend = CaptureBackend.UiaTextPattern,
@@ -178,4 +187,24 @@ internal sealed class PickerEventLog : IDisposable
         List<(SelectionGeneration? Generation, CaptureFailureReason Reason)> Failed,
         List<SelectionGeneration> Superseded,
         List<(SelectionGeneration Generation, SelectionInvalidationReason Reason)> Invalidated);
+}
+
+/// <summary>假焦点源（Phase 2 失效跟踪测试）。</summary>
+internal sealed class FakeFocusSource : IFocusTargetSource
+{
+    public event Action<ForegroundTargetSnapshot>? ForegroundChanged;
+
+    public void Start()
+    {
+    }
+
+    public void Stop()
+    {
+    }
+
+    public void Raise(ForegroundTargetSnapshot snapshot) => ForegroundChanged?.Invoke(snapshot);
+
+    public void Dispose()
+    {
+    }
 }

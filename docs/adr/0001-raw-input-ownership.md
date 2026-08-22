@@ -22,4 +22,5 @@ Phase 0 契约测试 #1 锚定冲突复现与 fail-fast 行为。
 ## 实现记录
 
 - [x] Phase 0：`RawInputRegistrationGuard`（Query/EnsureOwnable）+ `RawInputRegistrationConflict` + 契约测试 #1（本机复现双注册抢占）
-- [ ] Phase 2：`OwnedRawInputSource` 隐藏窗口 / 自持线程泵 / 注入模式 / broker / 归一化输入 DTO（落于 Core）
+- [x] Phase 2：`OwnedRawInputSource`（自持线程 + 隐藏顶级窗口 + INPUTSINK 注册 + fail-fast + 纯移动过滤）+ WM_INPUT 冒烟（SendInput 合成键盘实测可达）+ 归一化 DTO（Phase 1 已落 Core）
+- [ ] broker 模式：v1.5（消费者接入期）

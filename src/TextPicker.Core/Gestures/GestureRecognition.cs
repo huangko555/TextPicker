@@ -46,6 +46,9 @@ public enum InputInterruptKind
 /// <summary>打断动作（滚轮/右键/中键/X 键/Esc）：取消当前候选并清空未完成手势状态。</summary>
 public sealed record InputInterrupt(InputInterruptKind Kind, long MessageTimeMs, ForegroundTargetSnapshot Foreground);
 
+/// <summary>未构成手势的普通左键单击（非拖拽/非 Shift/非连击）——供捕获后失效跟踪（OutsideClick）判定。</summary>
+public sealed record PlainClickObservation(PhysicalScreenPoint DownPoint, PhysicalScreenPoint UpPoint, long MessageTimeMs, ForegroundTargetSnapshot Foreground);
+
 /// <summary>
 /// 手势状态机（ADR-0007，Core 纯逻辑）。消费归一化未分类输入记录，输出已分类手势/打断/丢弃信号。
 /// 单消费者线程契约（由注入方保证）；全部时序走 MessageTimeMs 时钟域，无真实时间依赖。
@@ -76,6 +79,9 @@ public sealed class GestureStateMachine
 
     /// <summary>手势层静默丢弃（不产生 generation；供计数诊断）。</summary>
     public event Action<GestureDropReason>? GestureDropped;
+
+    /// <summary>未构成手势的普通左键单击（点外失效跟踪用，ADR-0007 局部扩展）。</summary>
+    public event Action<PlainClickObservation>? PlainClickObserved;
 
     public void Reset()
     {
@@ -218,6 +224,11 @@ public sealed class GestureStateMachine
         {
             // Shift 状态在按下时读取（v6.1 定案）。
             RaiseGesture(BuildMouseGesture(SelectionGesture.ShiftClick, pending, up, 0));
+        }
+        else
+        {
+            // 普通单击：不构成手势，但作为失效跟踪信号上抛。
+            PlainClickObserved?.Invoke(new PlainClickObservation(pending.Point, up.Point, up.MessageTimeMs, pending.Foreground));
         }
 
         _clickRunCount = count;

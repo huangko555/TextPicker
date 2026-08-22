@@ -22,4 +22,5 @@ Phase 0 契约测试 #6（结构测试：跨 lane DTO 白名单不含 COM 接口
 ## 实现记录
 
 - [x] Phase 0：`ILaneTransferable` 标记 + `LaneDtoRules` 扫描器（识别 CsWin32 [ComImport] 接口）+ 契约测试 #6（含合成违规 DTO 自证扫描器有效）
-- [ ] Phase 2：三 lane 执行器 + 调度优先级（手势捕获 > 显式 > caret/probe/state > 流节拍）+ DropOldest + 40ms 键盘合并
+- [x] Phase 2：QueryRunner 执行器（超时/熔断/卡死置换/孤儿上限/quarantine，ADR-0006）+ LaneRoutedBackend（Capture/Observer 路由，Capture FIFO 串行）
+- [ ] 手势 > 显式优先级接入 Arbiter 调度（v1 FIFO 已满足串行契约）

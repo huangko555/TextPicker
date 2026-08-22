@@ -15,4 +15,4 @@
 
 ## 实现记录
 
-- [ ] Phase 2：三 lane 执行器 + 置换 + quarantine + 测试（TimeProvider 注入）
+- [x] Phase 2：`QueryRunner`（MTA worker、超时、熔断冷却、卡死置换（孤儿上限 1）、目标 quarantine）+ 全路径测试（Completed/TimedOut/CircuitOpen/SourceFailed/置换/孤儿上限/quarantine）

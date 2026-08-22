@@ -6,6 +6,7 @@ using TextPicker.Windows;
 namespace TextPicker.Windows.Tests.Phase0;
 
 /// <summary>契约 #1：Raw Input 所有权——同进程双注册冲突复现（后注册者抢占）；Owned fail-fast；注入模式无冲突。</summary>
+[Collection("RawInputSerial")]
 public sealed class Contract1RawInputOwnership
 {
     [Fact]

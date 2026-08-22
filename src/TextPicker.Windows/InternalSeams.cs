@@ -13,6 +13,9 @@ internal interface ISelectionGestureFeed
     /// <summary>手势层静默丢弃（过期/无效序列；仅计数，不产生 generation）。</summary>
     event EventHandler<GestureDroppedEventArgs> GestureDropped;
 
+    /// <summary>未构成手势的普通单击（捕获后失效跟踪：OutsideClick）。</summary>
+    event EventHandler<PlainClickEventArgs> PlainClickObserved;
+
     void Start(long epoch);
     void Stop();
 }
@@ -40,6 +43,12 @@ internal sealed class InterruptDetectedEventArgs : EventArgs
 internal sealed class GestureDroppedEventArgs : EventArgs
 {
     public GestureDropReason Reason { get; init; }
+}
+
+internal sealed class PlainClickEventArgs : EventArgs
+{
+    public long Epoch { get; init; }
+    public required PlainClickObservation Click { get; init; }
 }
 
 /// <summary>读取后端 seam（ADR-0005 BackendRouter 的 v0 形态；Phase 3 换 UiaSelectionBackend）。</summary>

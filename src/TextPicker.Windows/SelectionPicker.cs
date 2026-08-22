@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using Windows.Win32;
+using Windows.Win32.Foundation;
 
 namespace TextPicker.Windows;
 
@@ -13,6 +15,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private readonly ISelectionGestureFeed _feed;
     private readonly ISelectionBackend _backend;
     private readonly ITargetPolicy _policy;
+    private readonly IFocusTargetSource _focusSource;
     private readonly TimeProvider _time;
 
     private bool _running;
@@ -26,6 +29,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private readonly Dictionary<SelectionRequestId, CancellationTokenSource> _pendingRequests = new();
     private SelectionCapture? _lastCapture;
     private bool _lastCaptureInvalidated;      // Captured 之后 Invalidated ≤ 1
+    private TargetContext? _focusTarget;
 
     // counters（string-free，ADR-0008）
     private long _candidatesPublished;
@@ -40,26 +44,31 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private readonly Dictionary<CaptureFailureReason, int> _failuresByReason = new();
     private readonly Dictionary<SelectionInvalidationReason, int> _invalidationsByReason = new();
 
-    /// <summary>生产入口：Phase 2 起默认装配 Owned 输入源；当前默认为空输入源 + 不可用后端（骨架期）。</summary>
+    /// <summary>生产入口：默认装配 Owned 输入源 + WinEvent 焦点源（ADR-0001；Owned 启动 fail-fast）。</summary>
     public SelectionPicker()
-        : this(gestureFeed: null, backend: null, policy: null, timeProvider: null)
+        : this(gestureFeed: null, backend: null, policy: null, timeProvider: null, inputSource: new OwnedRawInputSource(), focusSource: null)
     {
     }
 
-    /// <summary>组装入口（seam 注入；测试与 Phase 2 装配用）。</summary>
+    /// <summary>组装入口（seam 注入；测试与 Phase 装配用）。</summary>
     internal SelectionPicker(
         ISelectionGestureFeed? gestureFeed = null,
         ISelectionBackend? backend = null,
         ITargetPolicy? policy = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IInputRecordSource? inputSource = null,
+        IFocusTargetSource? focusSource = null)
     {
-        _feed = gestureFeed ?? new NullGestureFeed();
+        _feed = gestureFeed ?? new CoreGestureFeed(inputSource ?? new OwnedRawInputSource());
         _backend = backend ?? new UnavailableBackend();
         _policy = policy ?? DefaultTargetPolicy.Instance;
+        _focusSource = focusSource ?? new WinEventFocusTargetSource();
         _time = timeProvider ?? TimeProvider.System;
         _feed.GestureDetected += OnGestureDetected;
         _feed.InterruptDetected += OnInterruptDetected;
         _feed.GestureDropped += OnGestureDropped;
+        _feed.PlainClickObserved += OnPlainClickObserved;
+        _focusSource.ForegroundChanged += OnForegroundChanged;
     }
 
     // —— A. 生命周期 ——
@@ -73,9 +82,12 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 throw new InvalidOperationException("SelectionPicker is already running.");
             }
 
+            // feed 先行启动（Owned fail-fast 在此传播：RawInputRegistrationConflict 等启动失败时状态保持未运行）。
+            var newEpoch = _epoch + 1;
+            _feed.Start(newEpoch);
+            _focusSource.Start();
             _running = true;
-            _epoch++;                            // 旧 epoch 回调自此全部作废（ADR-0002）
-            _feed.Start(_epoch);
+            _epoch = newEpoch;                            // 旧 epoch 回调自此全部作废（ADR-0002）
         }
     }
 
@@ -93,7 +105,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             // 在飞 generation 在 Stop 边界终结为 Cancelled，保持 exactly-one-terminal 不变式跨 Stop/Start 成立。
             if (_inFlight is { } st && !st.TerminalPublished)
             {
-                MarkTerminal(st);
+                TerminateInFlight(st);
                 RaiseSelectionFailed(st, CaptureFailureReason.Cancelled);
             }
 
@@ -104,6 +116,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 cts.Cancel();
             }
 
+            _focusSource.Stop();
             _feed.Stop();
         }
     }
@@ -275,19 +288,29 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     public Task<CaretObservation?> ObserveCaretAsync(CancellationToken ct)
         => throw new NotSupportedException("Caret observation lands in Phase 3 (CaretProbeChain).");
 
-    // CS0067：CaretChanged / FocusTargetChanged 由 Phase 3 的 CaretProbeChain / FocusTargetEventSource 驱动。
-#pragma warning disable CS0067
-    public event EventHandler<CaretEventArgs>? CaretChanged;
-
     public Task<SelectionState?> ObserveSelectionStateAsync(CancellationToken ct)
         => throw new NotSupportedException("Selection state observation lands in Phase 3.");
 
-    // —— E. 焦点目标（Phase 3）——
+    // —— E. 焦点目标 ——
 
-    public TargetContext? CurrentFocusTarget => null;
+    /// <summary>当前前台目标（Win32 浅上下文：PID/进程名/HWND/窗口类；UIA 富化在 Phase 3）。</summary>
+    public TargetContext? CurrentFocusTarget
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _focusTarget;
+            }
+        }
+    }
+
+    // CS0067：CaretChanged 由 Phase 3 的 CaretProbeChain 驱动；FocusTargetChanged 已在 OnForegroundChanged 发布。
+#pragma warning disable CS0067
+    public event EventHandler<CaretEventArgs>? CaretChanged;
+#pragma warning restore CS0067
 
     public event EventHandler<FocusTargetEventArgs>? FocusTargetChanged;
-#pragma warning restore CS0067
 
     // —— F. 配置 ——
 
@@ -494,7 +517,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         _ = ProcessGestureReadAsync(toProcess);
     }
 
-    /// <summary>打断动作：终结在飞候选（Failed-Interrupted）；捕获完成后的 Esc/点外失效跟踪在 Phase 2 接线。</summary>
+    /// <summary>打断动作：在飞候选 → Failed(Interrupted)；捕获完成后 Esc → Invalidated(Escape)；其余打断不影响已完成捕获。</summary>
     private void OnInterruptDetected(object? sender, InterruptDetectedEventArgs args)
     {
         lock (_gate)
@@ -508,8 +531,91 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             {
                 TerminateInFlight(state);
                 RaiseSelectionFailed(state, CaptureFailureReason.Interrupted);
+                return;
+            }
+
+            if (args.Kind == InputInterruptKind.Escape && _lastCapture?.Generation is { } generation && !_lastCaptureInvalidated)
+            {
+                InvalidateLiveCapture(generation, SelectionInvalidationReason.Escape);
             }
         }
+    }
+
+    /// <summary>普通单击（无手势）：捕获完成后 → Invalidated(OutsideClick)；消费者豁免窗口上的单击不失效。</summary>
+    private void OnPlainClickObserved(object? sender, PlainClickEventArgs args)
+    {
+        lock (_gate)
+        {
+            if (!_running || args.Epoch != _epoch)
+            {
+                return;
+            }
+
+            if (_lastCapture?.Generation is { } generation && !_lastCaptureInvalidated && !_consumerWindows.Contains(args.Click.Foreground.WindowHandle))
+            {
+                InvalidateLiveCapture(generation, SelectionInvalidationReason.OutsideClick);
+            }
+        }
+    }
+
+    /// <summary>前台变化：更新焦点目标；捕获完成后 PID 变化 → ForegroundChanged、原窗口消亡 → TargetGone（消费者窗口豁免）。</summary>
+    private void OnForegroundChanged(ForegroundTargetSnapshot foreground)
+    {
+        lock (_gate)
+        {
+            if (!_running)
+            {
+                return;
+            }
+
+            _focusTarget = BuildFocusTarget(foreground);
+            RaiseEvent(FocusTargetChanged, new FocusTargetEventArgs(_focusTarget));
+
+            if (_lastCapture?.Generation is { } generation && !_lastCaptureInvalidated)
+            {
+                if (_consumerWindows.Contains(foreground.WindowHandle))
+                {
+                    return;    // 豁免：点工具条/拖工具条不自我打断
+                }
+
+                if (foreground.ProcessId != _lastCapture.Target.ProcessId)
+                {
+                    InvalidateLiveCapture(generation, SelectionInvalidationReason.ForegroundChanged);
+                }
+                else if (_lastCapture.Target.WindowHandle != 0 && !PInvoke.IsWindow(new HWND(_lastCapture.Target.WindowHandle)))
+                {
+                    InvalidateLiveCapture(generation, SelectionInvalidationReason.TargetGone);
+                }
+            }
+        }
+    }
+
+    private void InvalidateLiveCapture(SelectionGeneration generation, SelectionInvalidationReason reason)
+    {
+        _lastCaptureInvalidated = true;
+        RaiseInvalidated(generation, reason);
+    }
+
+    private static TargetContext BuildFocusTarget(ForegroundTargetSnapshot foreground)
+    {
+        var className = string.Empty;
+        if (foreground.WindowHandle != 0)
+        {
+            Span<char> buffer = stackalloc char[256];
+            var length = PInvoke.GetClassName(new HWND(foreground.WindowHandle), buffer);
+            if (length > 0)
+            {
+                className = new string(buffer[..length]);
+            }
+        }
+
+        return new TargetContext
+        {
+            ProcessId = foreground.ProcessId,
+            ProcessName = DefaultTargetPolicy.ResolveProcessName(foreground.ProcessId) ?? string.Empty,
+            WindowHandle = foreground.WindowHandle,
+            WindowClassName = className,
+        };
     }
 
     private void OnGestureDropped(object? sender, GestureDroppedEventArgs args)
@@ -750,35 +856,6 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                     owner._consumerWindows.Remove(_window);
                 }
             }
-        }
-    }
-
-    private sealed class NullGestureFeed : ISelectionGestureFeed
-    {
-        public event EventHandler<GestureDetectedEventArgs>? GestureDetected
-        {
-            add { }
-            remove { }
-        }
-
-        public event EventHandler<InterruptDetectedEventArgs>? InterruptDetected
-        {
-            add { }
-            remove { }
-        }
-
-        public event EventHandler<GestureDroppedEventArgs>? GestureDropped
-        {
-            add { }
-            remove { }
-        }
-
-        public void Start(long epoch)
-        {
-        }
-
-        public void Stop()
-        {
         }
     }
 
