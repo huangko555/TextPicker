@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TextPicker.Core/TextPicker.Core.csproj" />
+    <Project Path="src/TextPicker.Windows/TextPicker.Windows.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TextPicker.Core.Tests/TextPicker.Core.Tests.csproj" />
+    <Project Path="tests/TextPicker.Windows.Tests/TextPicker.Windows.Tests.csproj" />
+  </Folder>
+</Solution>
