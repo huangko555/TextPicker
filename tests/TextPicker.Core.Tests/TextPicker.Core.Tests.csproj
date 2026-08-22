@@ -21,4 +21,8 @@
     <ProjectReference Include="..\..\src\TextPicker.Core\TextPicker.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="traces\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -36,6 +36,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private long _cancelled;
     private long _explicitQueries;
     private long _filteredGestures;
+    private readonly Dictionary<GestureDropReason, int> _gestureDrops = new();
     private readonly Dictionary<CaptureFailureReason, int> _failuresByReason = new();
     private readonly Dictionary<SelectionInvalidationReason, int> _invalidationsByReason = new();
 
@@ -57,6 +58,8 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         _policy = policy ?? DefaultTargetPolicy.Instance;
         _time = timeProvider ?? TimeProvider.System;
         _feed.GestureDetected += OnGestureDetected;
+        _feed.InterruptDetected += OnInterruptDetected;
+        _feed.GestureDropped += OnGestureDropped;
     }
 
     // —— A. 生命周期 ——
@@ -120,6 +123,8 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     {
         Stop();
         _feed.GestureDetected -= OnGestureDetected;
+        _feed.InterruptDetected -= OnInterruptDetected;
+        _feed.GestureDropped -= OnGestureDropped;
         GC.SuppressFinalize(this);
     }
 
@@ -300,6 +305,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     public void ApplyOptions(SelectionPickerOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
+        SelectionPickerOptionsValidator.Validate(options);
 
         lock (_gate)
         {
@@ -371,6 +377,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                     Invalidated = _invalidated,
                     Cancelled = _cancelled,
                     ExplicitQueries = _explicitQueries,
+                    GestureDropsByReason = new Dictionary<GestureDropReason, int>(_gestureDrops),
                     FailuresByReason = new Dictionary<CaptureFailureReason, int>(_failuresByReason),
                     InvalidationsByReason = new Dictionary<SelectionInvalidationReason, int>(_invalidationsByReason),
                 };
@@ -464,6 +471,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 Up = args.UpPoint,
                 Cts = new CancellationTokenSource(),
                 StartTimestamp = _time.GetTimestamp(),
+                OptionsSnapshot = _options with { },    // 手势时刻快照，后续 ApplyOptions 不影响在飞请求
             };
             _inFlight = state;
             toProcess = state;
@@ -486,6 +494,32 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         _ = ProcessGestureReadAsync(toProcess);
     }
 
+    /// <summary>打断动作：终结在飞候选（Failed-Interrupted）；捕获完成后的 Esc/点外失效跟踪在 Phase 2 接线。</summary>
+    private void OnInterruptDetected(object? sender, InterruptDetectedEventArgs args)
+    {
+        lock (_gate)
+        {
+            if (!_running || args.Epoch != _epoch)
+            {
+                return;
+            }
+
+            if (_inFlight is { } state && IsCurrentInFlight(state))
+            {
+                TerminateInFlight(state);
+                RaiseSelectionFailed(state, CaptureFailureReason.Interrupted);
+            }
+        }
+    }
+
+    private void OnGestureDropped(object? sender, GestureDroppedEventArgs args)
+    {
+        lock (_gate)
+        {
+            _gestureDrops[args.Reason] = _gestureDrops.TryGetValue(args.Reason, out var n) ? n + 1 : 1;
+        }
+    }
+
     private async Task ProcessGestureReadAsync(PipelineState state)
     {
         BackendReadResult result;
@@ -498,32 +532,56 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             Target = state.Target,
             DownPoint = state.Down,
             UpPoint = state.Up,
-            Options = Options,
+            Options = state.OptionsSnapshot,
         };
 
+        var budget = CancellationTokenSource.CreateLinkedTokenSource(state.Cts.Token);
         try
         {
             RaiseDiagnostics(SelectionPipelineStage.BackendStarted, state);
-            result = await _backend.ReadAsync(request, state.Cts.Token).ConfigureAwait(false);
+            var readTask = _backend.ReadAsync(request, budget.Token);
+
+            // 候选外预算（v6.1 标定 ≈501ms）：读+settle 未按期完成 → Failed(IncompleteTimeout)，迟到结果丢弃。
+            var deadline = Task.Delay(state.OptionsSnapshot.IncompleteTimeout, _time, budget.Token);
+            var winner = await Task.WhenAny(readTask, deadline).ConfigureAwait(false);
+            if (winner == deadline)
+            {
+                lock (_gate)
+                {
+                    if (IsCurrentInFlight(state))
+                    {
+                        TerminateInFlight(state);
+                        RaiseSelectionFailed(state, CaptureFailureReason.IncompleteTimeout);
+                    }
+                }
+
+                budget.Cancel();    // 放弃等待而非中止 COM：在飞调用任其自然完成，结果按 epoch/generation 丢弃
+                return;
+            }
+
+            result = await readTask.ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            return;    // 终止事件（Cancelled/Superseded）已在锁内先行发出，迟到结果丢弃
+            return;    // 终止事件（Cancelled/Superseded/Interrupted）已在锁内先行发出，迟到结果丢弃
         }
         catch (Exception)
         {
             result = new BackendReadResult { Success = false, Failure = CaptureFailureReason.BackendUnavailable };
         }
+        finally
+        {
+            budget.Dispose();
+        }
 
         lock (_gate)
         {
-            if (state.TerminalPublished || !ReferenceEquals(_inFlight, state) || !_running || state.Epoch != _epoch)
+            if (!IsCurrentInFlight(state))
             {
                 return;    // 已终结 / 被取代 / 跨 epoch 迟到完成（ADR-0002）
             }
 
-            MarkTerminal(state);
-            _inFlight = null;
+            TerminateInFlight(state);
             var elapsed = _time.GetElapsedTime(state.StartTimestamp);
             RaiseDiagnostics(SelectionPipelineStage.BackendFinished, state, elapsed: elapsed);
             RaiseDiagnostics(SelectionPipelineStage.AnchorResolved, state, elapsed: elapsed);
@@ -554,6 +612,17 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     }
 
     private static void MarkTerminal(PipelineState state) => state.TerminalPublished = true;
+
+    /// <summary>在飞项仍是当前管线所有者（未终结、未被取代、epoch 未翻篇）。</summary>
+    private bool IsCurrentInFlight(PipelineState state) =>
+        _running && state.Epoch == _epoch && !state.TerminalPublished && ReferenceEquals(_inFlight, state);
+
+    private void TerminateInFlight(PipelineState state)
+    {
+        MarkTerminal(state);
+        _inFlight = null;
+        state.Cts.Cancel();
+    }
 
     private static SelectionCapture BuildCapture(
         BackendReadResult result,
@@ -656,6 +725,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         public PhysicalScreenPoint? Up { get; init; }
         public CancellationTokenSource Cts { get; init; } = new();
         public long StartTimestamp { get; init; }
+        public SelectionPickerOptions OptionsSnapshot { get; init; } = new();
         public bool TerminalPublished { get; set; }
     }
 
@@ -686,6 +756,18 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private sealed class NullGestureFeed : ISelectionGestureFeed
     {
         public event EventHandler<GestureDetectedEventArgs>? GestureDetected
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<InterruptDetectedEventArgs>? InterruptDetected
+        {
+            add { }
+            remove { }
+        }
+
+        public event EventHandler<GestureDroppedEventArgs>? GestureDropped
         {
             add { }
             remove { }

@@ -6,6 +6,13 @@ namespace TextPicker.Windows;
 internal interface ISelectionGestureFeed
 {
     event EventHandler<GestureDetectedEventArgs> GestureDetected;
+
+    /// <summary>打断动作（滚轮/右键/中键/X/Esc）：门面据此终结在飞候选（Failed-Interrupted）。</summary>
+    event EventHandler<InterruptDetectedEventArgs> InterruptDetected;
+
+    /// <summary>手势层静默丢弃（过期/无效序列；仅计数，不产生 generation）。</summary>
+    event EventHandler<GestureDroppedEventArgs> GestureDropped;
+
     void Start(long epoch);
     void Stop();
 }
@@ -20,6 +27,19 @@ internal sealed class GestureDetectedEventArgs : EventArgs
     public PhysicalScreenPoint? DownPoint { get; init; }
     public PhysicalScreenPoint? UpPoint { get; init; }
     public DateTimeOffset DetectedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+internal sealed class InterruptDetectedEventArgs : EventArgs
+{
+    public long Epoch { get; init; }
+    public InputInterruptKind Kind { get; init; }
+    public long MessageTimeMs { get; init; }
+    public ForegroundTargetSnapshot Foreground { get; init; } = ForegroundTargetSnapshot.Unknown;
+}
+
+internal sealed class GestureDroppedEventArgs : EventArgs
+{
+    public GestureDropReason Reason { get; init; }
 }
 
 /// <summary>读取后端 seam（ADR-0005 BackendRouter 的 v0 形态；Phase 3 换 UiaSelectionBackend）。</summary>

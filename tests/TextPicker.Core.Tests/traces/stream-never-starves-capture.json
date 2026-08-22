@@ -1,0 +1,18 @@
+{
+  "name": "stream-never-starves-capture",
+  "arbiter": { "gestureQueue": 8, "explicitQueue": 4, "observationQueue": 16, "streamQueue": 2 },
+  "steps": [
+    { "op": "enqueue", "work": { "id": 1, "class": "streamTick", "at": 0, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "schedule", "expectStarted": [1] },
+    { "op": "enqueue", "work": { "id": 2, "class": "gestureCapture", "at": 5, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "schedule", "expectStarted": [2] },
+    { "op": "enqueue", "work": { "id": 3, "class": "streamTick", "at": 30, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "enqueue", "work": { "id": 4, "class": "streamTick", "at": 31, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "enqueue", "work": { "id": 5, "class": "streamTick", "at": 32, "coalescible": false }, "expectDisplaced": [3] },
+    { "op": "complete", "id": 1 },
+    { "op": "complete", "id": 2 },
+    { "op": "schedule", "expectStarted": [4] },
+    { "op": "complete", "id": 4 },
+    { "op": "schedule", "expectStarted": [5] }
+  ]
+}

@@ -18,6 +18,7 @@ GetRegisteredRawInputDevices
 RegisterRawInputDevices
 SetThreadDpiAwarenessContext
 GetClipboardSequenceNumber
+GetWindowRect
 CreateWindowEx
 DestroyWindow
 DefWindowProc

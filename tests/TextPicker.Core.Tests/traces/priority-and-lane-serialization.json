@@ -1,0 +1,18 @@
+{
+  "name": "priority-and-lane-serialization",
+  "arbiter": { "gestureQueue": 8, "explicitQueue": 4, "observationQueue": 16, "streamQueue": 8 },
+  "steps": [
+    { "op": "enqueue", "work": { "id": 1, "class": "explicitCapture", "at": 0, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "enqueue", "work": { "id": 2, "class": "gestureCapture", "at": 1, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "schedule", "expectStarted": [2] },
+    { "op": "schedule", "expectStarted": [] },
+    { "op": "complete", "id": 2 },
+    { "op": "schedule", "expectStarted": [1] },
+    { "op": "enqueue", "work": { "id": 3, "class": "streamTick", "at": 10, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "schedule", "expectStarted": [3] },
+    { "op": "enqueue", "work": { "id": 4, "class": "observation", "at": 12, "coalescible": false }, "expectDisplaced": [] },
+    { "op": "schedule", "expectStarted": [] },
+    { "op": "complete", "id": 3 },
+    { "op": "schedule", "expectStarted": [4] }
+  ]
+}

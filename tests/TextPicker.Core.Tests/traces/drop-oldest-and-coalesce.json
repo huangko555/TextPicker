@@ -1,0 +1,15 @@
+{
+  "name": "drop-oldest-and-coalesce",
+  "arbiter": { "gestureQueue": 2, "explicitQueue": 2, "observationQueue": 4, "streamQueue": 4 },
+  "steps": [
+    { "op": "enqueue", "work": { "id": 1, "class": "gestureCapture", "at": 0, "coalescible": true }, "expectDisplaced": [] },
+    { "op": "enqueue", "work": { "id": 2, "class": "gestureCapture", "at": 20, "coalescible": true }, "expectDisplaced": [1] },
+    { "op": "enqueue", "work": { "id": 3, "class": "gestureCapture", "at": 100, "coalescible": true }, "expectDisplaced": [] },
+    { "op": "enqueue", "work": { "id": 4, "class": "gestureCapture", "at": 120, "coalescible": true }, "expectDisplaced": [3] },
+    { "op": "schedule", "expectStarted": [2] },
+    { "op": "complete", "id": 2 },
+    { "op": "schedule", "expectStarted": [4] },
+    { "op": "complete", "id": 4 },
+    { "op": "enqueue", "work": { "id": 5, "class": "explicitCapture", "at": 200, "coalescible": false }, "expectDisplaced": [] }
+  ]
+}

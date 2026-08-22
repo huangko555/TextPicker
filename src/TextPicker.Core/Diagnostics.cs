@@ -37,6 +37,11 @@ public sealed record SelectionPickerCounters
     public long Invalidated { get; init; }
     public long Cancelled { get; init; }
     public long ExplicitQueries { get; init; }
+
+    /// <summary>手势层静默丢弃计数（过期消息/打断清态/无效序列；无 generation 生命周期）。</summary>
+    public IReadOnlyDictionary<GestureDropReason, int> GestureDropsByReason { get; init; }
+        = new Dictionary<GestureDropReason, int>();
+
     public IReadOnlyDictionary<CaptureFailureReason, int> FailuresByReason { get; init; }
         = new Dictionary<CaptureFailureReason, int>();
     public IReadOnlyDictionary<SelectionInvalidationReason, int> InvalidationsByReason { get; init; }

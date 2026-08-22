@@ -40,7 +40,19 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 
 | Phase | 日期 | 结果 | 备注 |
 |---|---|---|---|
-| 0 | 2026-08-23 | ✅ 17/17 全绿（Core 4 + Windows 13） | 7 项契约冻结测试全部落地并通过；Raw Input 双注册冲突在本机复现（后注册者抢占 + fail-fast）；门面为 seam 注入的最小实现，Phase 1–2 替换内部件后测试持续作回归守卫。Phase 0 执行期局部决策见下。 |
+| 0 | 2026-08-23 | ✅ 17/17 全绿（Core 4 + Windows 13） | 7 项契约冻结测试全部落地并通过；Raw Input 双注册冲突在本机复现（后注册者抢占 + fail-fast）；门面为 seam 注入的最小实现，Phase 1–2 替换内部件后测试持续作回归守卫。局部决策见下。 |
+| 1 | 2026-08-23 | ✅ 84/84 全绿（Core 59 + Windows 25） | 状态机/TextNormalizer/GeometryBuilder/Arbiter/Options 校验 + 黄金迹线回放 + property-based 不变式（8 种子）。局部决策见下。 |
+
+### Phase 1 执行期局部决策
+
+1. **键盘手势统一取抬起沿**：Ctrl+A 抬起触发为定案；Shift 键盘选择（VK 0x21..0x28）同样取 key-up——计划未明说，从一致性选择；key-down 自动重复不会重复触发。
+2. **IncompleteTimeout（≈501ms）落在门面候选外预算**：手势时刻起，读+settle 未按期完成 → `Failed(IncompleteTimeout)`、迟到结果丢弃（「已标记但迟迟未完成的选择取消」语义）；状态机保持纯消息时间钟域、无真实时间依赖。
+3. **打断动作双层语义**：候选在飞时 → `Failed(Interrupted)`（有 generation）；捕获完成后 Esc/点外/前台切换 → `Invalidated`（Phase 2 失效跟踪接线）。
+4. **状态机不做手势开关过滤**：单一过滤源在门面策略层（DefaultTargetPolicy），状态机输出全部已分类手势。
+5. **Arbiter 建模为双 lane**：Capture（手势 > 显式，串行）+ Observer（观察 > 流节拍，串行；流在飞上限 1 由 lane 串行天然成立）；40ms 合并窗口仅作用于同类未启动可合并项。
+6. **GestureDropReason 公开枚举**进 `SelectionPickerCounters.GestureDropsByReason`（过期/打断清态/无效序列计数，string-free）。
+7. **TextNormalizer 保留 `\t`**：Control 类别但属语义空白；`\n` 同理保留，其余 Control/Format（含零宽字符）滤除。
+8. **CsWin32**：`GetWindowRect` 入清单（阶段一浅快照窗口矩形）。
 
 ### Phase 0 执行期局部决策（依 §11 授权：按证据局部决策并记录）
 

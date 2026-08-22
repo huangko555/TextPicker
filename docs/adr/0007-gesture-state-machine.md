@@ -15,4 +15,6 @@
 
 ## 实现记录
 
-- [ ] Phase 1：状态机全路径单测（五手势 + Explicit、过期、取消、Esc 打断、id 单调、三击取代、双击拖拽合成、Ctrl+Shift 变体、相位序列、过滤无洞）
+- [x] Phase 0：归一化输入 DTO（InputRecord：Key/PointerDown/PointerUp/PointerWheel + ModifierSnapshot + ForegroundTargetSnapshot + MessageTimeMs）
+- [x] Phase 1：`GestureStateMachine`（消息时间钟域、可注入双击时间）+ 全路径单测（五手势、双击拖拽合成、三击连发、Ctrl+Shift 变体、过期、打断、无效序列、Reset）+ `CoreGestureFeed` 适配器 + 8 种子 property-based 不变式测试
+- [x] Phase 1 局部决策：键盘手势统一取**抬起沿**（Ctrl+A 定案在案；Shift 键盘选择从之，自动重复不重复触发）；手势开关过滤不在状态机内（门面策略层单一过滤源）；打断在候选在飞时 → Failed(Interrupted)（捕获完成后的 Esc/点外 → Invalidated，Phase 2 接线）

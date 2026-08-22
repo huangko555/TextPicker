@@ -9,11 +9,24 @@ internal sealed class FakeGestureFeed : ISelectionGestureFeed
 
     public event EventHandler<GestureDetectedEventArgs>? GestureDetected;
 
+    public event EventHandler<InterruptDetectedEventArgs>? InterruptDetected;
+
+#pragma warning disable CS0067 // 由真实输入源路径触发；假件仅按需使用
+    public event EventHandler<GestureDroppedEventArgs>? GestureDropped;
+#pragma warning restore CS0067
+
     public void Start(long epoch) => Volatile.Write(ref _epoch, epoch);
 
     public void Stop()
     {
     }
+
+    public void RaiseInterrupt(InputInterruptKind kind, long epochOverride = default)
+        => InterruptDetected?.Invoke(this, new InterruptDetectedEventArgs
+        {
+            Epoch = epochOverride != default ? epochOverride : Volatile.Read(ref _epoch),
+            Kind = kind,
+        });
 
     public void Raise(
         SelectionGesture gesture,
