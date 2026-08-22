@@ -43,6 +43,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | 0 | 2026-08-23 | ✅ 17/17 全绿（Core 4 + Windows 13） | 7 项契约冻结测试全部落地并通过；Raw Input 双注册冲突在本机复现（后注册者抢占 + fail-fast）；门面为 seam 注入的最小实现，Phase 1–2 替换内部件后测试持续作回归守卫。局部决策见下。 |
 | 1 | 2026-08-23 | ✅ 84/84 全绿（Core 59 + Windows 25） | 状态机/TextNormalizer/GeometryBuilder/Arbiter/Options 校验 + 黄金迹线回放 + property-based 不变式（8 种子）。局部决策见下。 |
 | 2 | 2026-08-23 | ✅ 102/102 全绿（Core 59 + Windows 43） | OwnedRawInputSource（自持线程+隐藏窗口+INPUTSINK+fail-fast）+ WM_INPUT 现场冒烟（SendInput 合成键盘实测可达）+ QueryRunner（超时/熔断/卡死置换/孤儿上限/quarantine）+ LaneRoutedBackend + 门面失效跟踪（Esc/点外/前台/TargetGone + 消费者豁免）+ WinEvent 焦点源 + 全屏暂停。局部决策见下。 |
+| 3 | 2026-08-23 | ✅ 111/111 全绿（Core 59 + Windows 52） | UiaSelectionBackend（ADR-5 全链：PID 判序/密码双查/父链/多 range 拒绝/截断/LocalContext/几何/方向权威/锚点链）+ CaretProbeChain 三级 + 托管 UIA 事件源（Lane 1）+ 观察者 lane（caret/state/probe/内容流）+ 进程内 WPF 宿主端到端 9 测试。局部决策见下。 |
 
 ### Phase 1 执行期局部决策
 
@@ -92,3 +93,11 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 5. **FocusTarget v1 = Win32 浅上下文**（PID/进程名/HWND/窗口类）；UIA 富化（ControlType/FrameworkId 等）在 Phase 3。
 6. **消息时间 32 位回绕**（~49.7 天边界）可能产生一次性误判，接受并文档注明。
 7. **消费者窗口豁免同时覆盖候选与失效**（点工具条/拖工具条既不产生候选也不触发 OutsideClick/ForegroundChanged 失效）。
+
+### Phase 3 执行期局部决策
+
+1. **UIA 事件源用托管 System.Windows.Automation**（InputCue 生产同路线）：原始 COM 客户端 API 没有 TextSelectionChanged 的整型事件 ID；读取路径仍为原始 COM（COM 不过 lane 纪律不变）。Windows 库为此引入 WPF FrameworkReference。
+2. **显式捕获不做 PID 判序**：显式查询没有手势按下快照可复核，采纳焦点元素 PID；ProcessMismatch 保留给手势路径。
+3. **caret 探针链 MSAA 第四级暂缓**：前三级（TextPattern2 → 折叠 TextRange → GetGUIThreadInfo+ClientToScreen）覆盖主流应用；冒烟矩阵证明需要时再补（记 ADR-0004 项下）。
+4. **方向判定 caret 矩形严格要求 4 值**（单个矩形，§3.1 校验）；异常形态放弃权威判定而非降级猜测。
+5. **Probe 的 includeText 语义 = 读当前选区文本**（非控件全文）。

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Windows.Win32;
 using Windows.Win32.Foundation;
+using TextPicker.Windows.Uia;
 
 namespace TextPicker.Windows;
 
@@ -16,6 +17,8 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private readonly ISelectionBackend _backend;
     private readonly ITargetPolicy _policy;
     private readonly IFocusTargetSource _focusSource;
+    private readonly IUaEventSource _uaEvents;
+    private readonly IObserverLane _observerLane;
     private readonly TimeProvider _time;
 
     private bool _running;
@@ -31,6 +34,11 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private bool _lastCaptureInvalidated;      // Captured 之后 Invalidated ≤ 1
     private TargetContext? _focusTarget;
 
+    // 内容流（显式订阅制；40ms 合并 + 150ms 最小观测间隔 + 在飞上限 1）
+    private readonly List<Action<SelectionContentChangedEventArgs>> _contentSubscribers = new();
+    private long _lastStreamReadTimestamp;
+    private int _streamInFlight;
+
     // counters（string-free，ADR-0008）
     private long _candidatesPublished;
     private long _capturesSucceeded;
@@ -44,7 +52,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private readonly Dictionary<CaptureFailureReason, int> _failuresByReason = new();
     private readonly Dictionary<SelectionInvalidationReason, int> _invalidationsByReason = new();
 
-    /// <summary>生产入口：默认装配 Owned 输入源 + WinEvent 焦点源（ADR-0001；Owned 启动 fail-fast）。</summary>
+    /// <summary>生产入口：Owned 输入源 + Lane 路由 UIA 后端 + UIA 事件源 + WinEvent 焦点源（ADR-0001/0003/0005）。</summary>
     public SelectionPicker()
         : this(gestureFeed: null, backend: null, policy: null, timeProvider: null, inputSource: new OwnedRawInputSource(), focusSource: null)
     {
@@ -57,12 +65,17 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         ITargetPolicy? policy = null,
         TimeProvider? timeProvider = null,
         IInputRecordSource? inputSource = null,
-        IFocusTargetSource? focusSource = null)
+        IFocusTargetSource? focusSource = null,
+        IUaEventSource? uaEventSource = null,
+        IObserverLane? observerLane = null)
     {
+        _uaEvents = uaEventSource ?? new UiaAutomationEventSource();
+        _backend = backend ?? new LaneRoutedBackend(
+            (request, ct) => new UiaSelectionBackend(waitForSelectionSignal: _uaEvents.WaitForSelectionSignal).Read(request, ct));
         _feed = gestureFeed ?? new CoreGestureFeed(inputSource ?? new OwnedRawInputSource());
-        _backend = backend ?? new UnavailableBackend();
         _policy = policy ?? DefaultTargetPolicy.Instance;
         _focusSource = focusSource ?? new WinEventFocusTargetSource();
+        _observerLane = observerLane ?? new QueryRunnerObserverLane();
         _time = timeProvider ?? TimeProvider.System;
         _feed.GestureDetected += OnGestureDetected;
         _feed.InterruptDetected += OnInterruptDetected;
@@ -86,6 +99,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             var newEpoch = _epoch + 1;
             _feed.Start(newEpoch);
             _focusSource.Start();
+            _uaEvents.Start(newEpoch, OnUaSignal);
             _running = true;
             _epoch = newEpoch;                            // 旧 epoch 回调自此全部作废（ADR-0002）
         }
@@ -117,6 +131,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             }
 
             _focusSource.Stop();
+            _uaEvents.Stop();
             _feed.Stop();
         }
     }
@@ -237,7 +252,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     }
 
     public Task<TargetProbeResult> ProbeTargetAsync(PhysicalScreenPoint point, bool includeText, CancellationToken ct)
-        => throw new NotSupportedException("ProbeTarget lands in Phase 3 (UIA backend).");
+        => _observerLane.RunAsync(() => UiaSelectionBackend.Probe(point, includeText, ct), targetKey: $"probe:{(int)point.X},{(int)point.Y}", ct);
 
     public bool CancelSelection(SelectionGeneration generation)
     {
@@ -271,7 +286,15 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     }
 
     public IDisposable SubscribeSelectionContent(Action<SelectionContentChangedEventArgs> handler)
-        => throw new NotSupportedException("Selection content stream lands in Phase 2/3.");
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (_gate)
+        {
+            _contentSubscribers.Add(handler);
+        }
+
+        return new ContentSubscription(this, handler);
+    }
 
     // —— C. 指针/光标 ——
 
@@ -286,10 +309,27 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     // —— D. 插入光标（Phase 3）——
 
     public Task<CaretObservation?> ObserveCaretAsync(CancellationToken ct)
-        => throw new NotSupportedException("Caret observation lands in Phase 3 (CaretProbeChain).");
+        => _observerLane.RunAsync(() =>
+        {
+            var probe = Uia.CaretProbeChain.Observe();
+            if (!probe.Found)
+            {
+                return null;
+            }
+
+            var observation = new CaretObservation
+            {
+                CaretRect = probe.CaretRect!.Value,
+                Source = probe.Source!.Value,
+                IsCollapsedSelection = probe.IsCollapsedSelection,
+                Target = probe.Target ?? new TargetContext(),
+            };
+            RaiseEvent(CaretChanged, new CaretEventArgs(observation));
+            return observation;
+        }, targetKey: null, ct);
 
     public Task<SelectionState?> ObserveSelectionStateAsync(CancellationToken ct)
-        => throw new NotSupportedException("Selection state observation lands in Phase 3.");
+        => _observerLane.RunAsync(() => UiaSelectionBackend.ObserveSelectionState(ct), targetKey: null, ct);
 
     // —— E. 焦点目标 ——
 
@@ -305,10 +345,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         }
     }
 
-    // CS0067：CaretChanged 由 Phase 3 的 CaretProbeChain 驱动；FocusTargetChanged 已在 OnForegroundChanged 发布。
-#pragma warning disable CS0067
     public event EventHandler<CaretEventArgs>? CaretChanged;
-#pragma warning restore CS0067
 
     public event EventHandler<FocusTargetEventArgs>? FocusTargetChanged;
 
@@ -430,6 +467,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
 
     internal void EnqueueUaSignal(long epoch, UaSignalKind kind)
     {
+        List<Action<SelectionContentChangedEventArgs>>? subscribers = null;
         lock (_gate)
         {
             if (!_running || epoch != _epoch)
@@ -437,9 +475,50 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 return;    // 旧 epoch 迟到回调：不产生任何公开事件（ADR-0002）
             }
 
-            // Phase 2：驱动内容流节拍与键盘新鲜度信号（settle 轮询换事件等待）。
+            if (kind == UaSignalKind.TextSelectionChanged && _contentSubscribers.Count > 0)
+            {
+                // 双闸：150ms 最小观测间隔 + 在飞上限 1（40ms 合并由 UIA 事件天然节流近似）。
+                var now = _time.GetTimestamp();
+                if (_streamInFlight == 0 && _time.GetElapsedTime(_lastStreamReadTimestamp, now) >= TimeSpan.FromMilliseconds(150))
+                {
+                    _streamInFlight = 1;
+                    _lastStreamReadTimestamp = now;
+                    subscribers = new List<Action<SelectionContentChangedEventArgs>>(_contentSubscribers);
+                }
+            }
+        }
+
+        if (subscribers != null)
+        {
+            _ = PushContentStreamAsync(epoch, subscribers);
         }
     }
+
+    private async Task PushContentStreamAsync(long epoch, List<Action<SelectionContentChangedEventArgs>> subscribers)
+    {
+        try
+        {
+            var result = await CaptureCurrentSelectionAsync(fallbackAnchor: null, CancellationToken.None).ConfigureAwait(false);
+            if (result.Success && result.Capture != null)
+            {
+                var args = new SelectionContentChangedEventArgs(result.Capture);
+                foreach (var subscriber in subscribers)
+                {
+                    subscriber(args);
+                }
+            }
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                _streamInFlight = 0;
+            }
+        }
+    }
+
+    private void OnUaSignal(long epoch, Uia.UaSignalKind kind)
+        => EnqueueUaSignal(epoch, kind == Uia.UaSignalKind.TextSelectionChanged ? UaSignalKind.TextSelectionChanged : UaSignalKind.FocusChanged);
 
     // —— 手势管线 ——
 
@@ -854,6 +933,51 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 lock (owner._gate)
                 {
                     owner._consumerWindows.Remove(_window);
+                }
+            }
+        }
+    }
+
+    /// <summary>观察者 lane seam（caret/state/probe/内容流共用；ADR-0003 Lane 3）。</summary>
+    internal interface IObserverLane : IDisposable
+    {
+        Task<T> RunAsync<T>(Func<T> work, string? targetKey, CancellationToken ct);
+    }
+
+    private sealed class QueryRunnerObserverLane : IObserverLane
+    {
+        private readonly Execution.QueryRunner _runner = new(TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(2));
+
+        public async Task<T> RunAsync<T>(Func<T> work, string? targetKey, CancellationToken ct)
+        {
+            var outcome = await Task.Run(() => _runner.Run(() => work()!, targetKey, ct), CancellationToken.None).ConfigureAwait(false);
+            return outcome.Outcome == Execution.QueryOutcome.Completed
+                ? (T)outcome.Value!
+                : throw new InvalidOperationException($"observer lane unavailable: {outcome.Outcome}");
+        }
+
+        public void Dispose() => _runner.Dispose();
+    }
+
+    private sealed class ContentSubscription : IDisposable
+    {
+        private SelectionPicker? _owner;
+        private readonly Action<SelectionContentChangedEventArgs> _handler;
+
+        public ContentSubscription(SelectionPicker owner, Action<SelectionContentChangedEventArgs> handler)
+        {
+            _owner = owner;
+            _handler = handler;
+        }
+
+        public void Dispose()
+        {
+            var owner = Interlocked.Exchange(ref _owner, null);
+            if (owner != null)
+            {
+                lock (owner._gate)
+                {
+                    owner._contentSubscribers.Remove(_handler);
                 }
             }
         }

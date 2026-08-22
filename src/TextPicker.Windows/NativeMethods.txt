@@ -52,3 +52,7 @@ EVENT_SYSTEM_FOREGROUND
 WINEVENT_OUTOFCONTEXT
 TranslateMessage
 DispatchMessage
+TextUnit
+IUIAutomationEventHandler
+IUIAutomationPropertyChangedEventHandler
+GetAncestor

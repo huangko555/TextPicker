@@ -4,6 +4,11 @@
     <ProjectReference Include="..\TextPicker.Core\TextPicker.Core.csproj" />
   </ItemGroup>
 
+  <!-- System.Windows.Automation（托管 UIA 事件订阅，InputCue 生产同路线）：原始 COM 客户端 API 无选区变化事件 ID -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.298">
       <PrivateAssets>all</PrivateAssets>

@@ -1,4 +1,5 @@
 using TextPicker;
+using TextPicker.Windows.Uia;
 using TextPicker.Windows;
 
 namespace TextPicker.Windows.Tests.Phase0;
@@ -203,6 +204,24 @@ internal sealed class FakeFocusSource : IFocusTargetSource
     }
 
     public void Raise(ForegroundTargetSnapshot snapshot) => ForegroundChanged?.Invoke(snapshot);
+
+    public void Dispose()
+    {
+    }
+}
+
+/// <summary>假 UIA 事件源（Phase 3 测试）。</summary>
+internal sealed class FakeUaEventSource : global::TextPicker.Windows.Uia.IUaEventSource
+{
+    public void Start(long epoch, Action<long, global::TextPicker.Windows.Uia.UaSignalKind> onSignal)
+    {
+    }
+
+    public bool WaitForSelectionSignal(TimeSpan timeout) => false;
+
+    public void Stop()
+    {
+    }
 
     public void Dispose()
     {
