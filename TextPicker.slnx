@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/TextPicker.App/TextPicker.App.csproj" />
     <Project Path="src/TextPicker.Core/TextPicker.Core.csproj" />
     <Project Path="src/TextPicker.Windows/TextPicker.Windows.csproj" />
   </Folder>

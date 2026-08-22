@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TextPicker.Core\TextPicker.Core.csproj" />
+    <ProjectReference Include="..\TextPicker.Windows\TextPicker.Windows.csproj" />
+  </ItemGroup>
+
+</Project>
