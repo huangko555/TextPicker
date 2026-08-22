@@ -11,7 +11,7 @@ public sealed record SelectionPickerOptions
     public int DragThresholdPixels { get; set; } = 6;
     public int MultiClickTolerancePixels { get; set; } = 6;
     public TimeSpan StaleMessageAge { get; set; } = TimeSpan.FromSeconds(1);          // GetMessageTime 时钟
-    public TimeSpan IncompleteTimeout { get; set; } = TimeSpan.FromMilliseconds(501);
+    public TimeSpan IncompleteTimeout { get; set; } = TimeSpan.FromMilliseconds(500);
     public TimeSpan QueryTimeout { get; set; } = TimeSpan.FromMilliseconds(250);
     public TimeSpan CircuitCooldown { get; set; } = TimeSpan.FromSeconds(2);
     public TimeSpan SettleDeadline { get; set; } = TimeSpan.FromMilliseconds(400);   // 键盘新鲜度 settle，profile 可调

@@ -541,7 +541,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             RaiseDiagnostics(SelectionPipelineStage.BackendStarted, state);
             var readTask = _backend.ReadAsync(request, budget.Token);
 
-            // 候选外预算（v6.1 标定 ≈501ms）：读+settle 未按期完成 → Failed(IncompleteTimeout)，迟到结果丢弃。
+            // 候选外预算（500ms）：读+settle 未按期完成 → Failed(IncompleteTimeout)，迟到结果丢弃。
             var deadline = Task.Delay(state.OptionsSnapshot.IncompleteTimeout, _time, budget.Token);
             var winner = await Task.WhenAny(readTask, deadline).ConfigureAwait(false);
             if (winner == deadline)

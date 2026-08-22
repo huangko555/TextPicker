@@ -46,7 +46,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 ### Phase 1 执行期局部决策
 
 1. **键盘手势统一取抬起沿**：Ctrl+A 抬起触发为定案；Shift 键盘选择（VK 0x21..0x28）同样取 key-up——计划未明说，从一致性选择；key-down 自动重复不会重复触发。
-2. **IncompleteTimeout（≈501ms）落在门面候选外预算**：手势时刻起，读+settle 未按期完成 → `Failed(IncompleteTimeout)`、迟到结果丢弃（「已标记但迟迟未完成的选择取消」语义）；状态机保持纯消息时间钟域、无真实时间依赖。
+2. **IncompleteTimeout（500ms，实测标定 ≈501ms 经决策取整）落在门面候选外预算**：手势时刻起，读+settle 未按期完成 → `Failed(IncompleteTimeout)`、迟到结果丢弃（「已标记但迟迟未完成的选择取消」语义）；状态机保持纯消息时间钟域、无真实时间依赖。
 3. **打断动作双层语义**：候选在飞时 → `Failed(Interrupted)`（有 generation）；捕获完成后 Esc/点外/前台切换 → `Invalidated`（Phase 2 失效跟踪接线）。
 4. **状态机不做手势开关过滤**：单一过滤源在门面策略层（DefaultTargetPolicy），状态机输出全部已分类手势。
 5. **Arbiter 建模为双 lane**：Capture（手势 > 显式，串行）+ Observer（观察 > 流节拍，串行；流在飞上限 1 由 lane 串行天然成立）；40ms 合并窗口仅作用于同类未启动可合并项。

@@ -10,7 +10,7 @@
 - 多击 = 系统双击时间（`GetDoubleClickTime`）+ 按下点 6px 容差；**双击+拖拽 = 单词扩展选择，合成单个 MultiClick 手势**；三击取代双击 = `SelectionSuperseded`（预期行为，文档化）。
 - Ctrl+A：A 键**抬起**且 Ctrl 按下（`GetAsyncKeyState` 查 Ctrl）。
 - Shift 键盘选择：虚拟键 0x21..0x28（PageUp/PageDown/End/Home/四方向），含 Ctrl 修饰变体（如 Ctrl+Shift+Home）。
-- 打断 = 滚轮 / 右键 / 中键 / Esc；Hook 消息 >1s 丢弃（时钟用 `GetMessageTime()`）；候选 501ms 未完成取消。
+- 打断 = 滚轮 / 右键 / 中键 / Esc；Hook 消息 >1s 丢弃（时钟用 `GetMessageTime()`）；候选 500ms 未完成取消（实测标定 ≈501ms，经决策取整为 500）。
 - 键盘事件只做手势分类后即弃，不保留按键记录；手势层过滤（消费者窗口 / 全屏 / OwnProcess / 排除列表 / 无效输入）静默完成，**不产生 generation**（§4 无洞不变式）。
 
 ## 实现记录
