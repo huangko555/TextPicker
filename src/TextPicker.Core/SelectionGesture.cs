@@ -10,4 +10,8 @@ public enum SelectionGesture
     ShiftClick = 3,
     CtrlA = 4,
     ShiftKeyboard = 5,
+
+    /// <summary>点击型选区变化（v1.1 用户授权新增）：普通单击后目标应用自行改变选区（如 Word 行首选行）。
+    /// 由 UIA TextSelectionChanged 事件 + 非折叠预检合成，非状态机直接识别。</summary>
+    ClickSelection = 6,
 }

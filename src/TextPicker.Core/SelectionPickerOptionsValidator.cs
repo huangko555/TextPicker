@@ -47,6 +47,11 @@ public static class SelectionPickerOptionsValidator
             throw new ArgumentOutOfRangeException(nameof(options), "SettleDeadline must be >= 0.");
         }
 
+        if (options.ClickSelectionWindow <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(options), "ClickSelectionWindow must be positive.");
+        }
+
         if (options.MaxTextLength < 1)
         {
             throw new ArgumentOutOfRangeException(nameof(options), "MaxTextLength must be >= 1.");

@@ -70,4 +70,7 @@ public enum GestureDropReason
 
     /// <summary>无效输入序列（如无按下记录的抬起）。</summary>
     InvalidSequence = 2,
+
+    /// <summary>点击布防未命中：UIA 选区变化为折叠（仅移动光标）或超窗，静默丢弃。</summary>
+    ClickSelectionNoChange = 3,
 }

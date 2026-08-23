@@ -8,6 +8,10 @@ public sealed record SelectionPickerOptions
     public bool ShiftClickEnabled { get; set; } = true;
     public bool CtrlAEnabled { get; set; } = true;
     public bool ShiftKeyboardEnabled { get; set; } = true;   // 全部键盘手势关闭时不注册键盘 sink
+    public bool ClickSelectionEnabled { get; set; } = true;  // 点击型选区变化（Word 行首选行等）
+
+    /// <summary>点击布防窗口：普通单击后等待 UIA 选区变化事件的时长。</summary>
+    public TimeSpan ClickSelectionWindow { get; set; } = TimeSpan.FromMilliseconds(400);
     public int DragThresholdPixels { get; set; } = 6;
     public int MultiClickTolerancePixels { get; set; } = 6;
     public TimeSpan StaleMessageAge { get; set; } = TimeSpan.FromSeconds(1);          // GetMessageTime 时钟

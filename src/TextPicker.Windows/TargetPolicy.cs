@@ -61,6 +61,7 @@ internal sealed class DefaultTargetPolicy : ITargetPolicy
             SelectionGesture.ShiftClick => options.ShiftClickEnabled,
             SelectionGesture.CtrlA => options.CtrlAEnabled,
             SelectionGesture.ShiftKeyboard => options.ShiftKeyboardEnabled,
+            SelectionGesture.ClickSelection => options.ClickSelectionEnabled,
             _ => true,
         };
         if (!enabled)

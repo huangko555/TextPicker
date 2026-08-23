@@ -38,20 +38,7 @@ internal sealed class UiaSelectionBackend
         {
             var automation = UiaCom.Automation;
 
-            // PID 判序：读取时焦点 PID 必须等于按下快照 PID。
-            focusedElement = automation.GetFocusedElement();
-            if (focusedElement == null)
-            {
-                return Fail(CaptureFailureReason.BackendUnavailable);
-            }
-
-            var focusedPid = UiaCom.GetProcessId(focusedElement);
-            if (request.Origin == CaptureOrigin.Gesture && focusedPid != request.Target.ProcessId)
-            {
-                return Fail(CaptureFailureReason.ProcessMismatch);
-            }
-
-            // 命中元素（点查询）；PID 匹配时优先，否则走焦点链。
+            // 点查询前置：高完整性（管理员）目标在点查询上抛 E_ACCESSDENIED，先于焦点路径暴露真实原因（UIPI）。
             var point = request.UpPoint ?? request.Target.PointerPoint;
             if (point is { } screenPoint)
             {
@@ -63,13 +50,32 @@ internal sealed class UiaSelectionBackend
                 }
             }
 
+            focusedElement = automation.GetFocusedElement();
+
             // 密码双查（命中 + 焦点）。
-            if ((hitElement != null && UiaCom.IsPassword(hitElement)) || UiaCom.IsPassword(focusedElement))
+            if ((hitElement != null && UiaCom.IsPassword(hitElement)) || (focusedElement != null && UiaCom.IsPassword(focusedElement)))
             {
                 return Fail(CaptureFailureReason.PasswordField);
             }
 
+            // PID 判序（手势路径）：读取时焦点 PID 必须等于按下快照 PID。
+            int readTargetPid = request.Target.ProcessId;
+            if (focusedElement != null)
+            {
+                readTargetPid = UiaCom.GetProcessId(focusedElement);
+                if (request.Origin == CaptureOrigin.Gesture && readTargetPid != request.Target.ProcessId)
+                {
+                    return Fail(CaptureFailureReason.ProcessMismatch);
+                }
+            }
+
+            // 焦点不可见（常见于高完整性前台）：降级用命中元素。
             var origin = hitElement ?? focusedElement;
+            if (origin == null)
+            {
+                return Fail(CaptureFailureReason.BackendUnavailable);
+            }
+
             var (textPattern, owner, ownerFromWalk) = UiaCom.FindTextPattern(automation, origin);
             patternOwner = owner;
             ownerIsStart = !ownerFromWalk;
@@ -124,7 +130,7 @@ internal sealed class UiaSelectionBackend
                     OriginalLength = null,
                 },
                 Geometry = geometry,
-                Target = UiaCom.Describe(patternOwner, focusedPid),
+                Target = UiaCom.Describe(patternOwner, readTargetPid),
                 AnchorRect = anchorRect,
                 AnchorSource = anchorSource,
                 Backend = CaptureBackend.UiaTextPattern,
@@ -476,5 +482,62 @@ internal sealed class UiaSelectionBackend
         }
 
         return (null, AnchorSource.None);
+    }
+}
+
+/// <summary>ClickSelection 预检：焦点元素是否持有指定进程的非折叠选区（点击型选区变化的防噪闸）。</summary>
+internal static class ClickSelectionPrecheck
+{
+    public static bool HasNonCollapsedSelection(int expectedProcessId)
+    {
+        IUIAutomationElement? element = null;
+        IUIAutomationTextRangeArray? ranges = null;
+        IUIAutomationTextRange? range = null;
+        IUIAutomationElement? owner = null;
+        try
+        {
+            var automation = UiaCom.Automation;
+            element = automation.GetFocusedElement();
+            if (element == null || UiaCom.GetProcessId(element) != expectedProcessId)
+            {
+                return false;
+            }
+
+            var (textPattern, patternOwner, ownerFromWalk) = UiaCom.FindTextPattern(automation, element);
+            owner = patternOwner;
+            if (textPattern == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                ranges = textPattern.GetSelection();
+                if (ranges == null || ranges.Length == 0)
+                {
+                    return false;
+                }
+
+                range = ranges.GetElement(0);
+                return range.CompareEndpoints(TextPatternRangeEndpoint.TextPatternRangeEndpoint_Start, range, TextPatternRangeEndpoint.TextPatternRangeEndpoint_End) != 0;
+            }
+            finally
+            {
+                if (!ownerFromWalk)
+                {
+                    UiaCom.ReleaseComObject(owner);
+                }
+            }
+        }
+        catch (COMException)
+        {
+            return false;
+        }
+        finally
+        {
+            UiaCom.ReleaseComObject(range);
+            UiaCom.ReleaseComObject(ranges);
+            UiaCom.ReleaseComObject(element);
+        }
     }
 }

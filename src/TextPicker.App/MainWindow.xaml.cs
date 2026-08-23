@@ -146,6 +146,7 @@ public partial class MainWindow : Window, IDisposable
         _picker.SetTriggerEnabled(SelectionGesture.ShiftClick, GestShift.IsChecked == true);
         _picker.SetTriggerEnabled(SelectionGesture.CtrlA, GestCtrlA.IsChecked == true);
         _picker.SetTriggerEnabled(SelectionGesture.ShiftKeyboard, GestKbd.IsChecked == true);
+        _picker.SetTriggerEnabled(SelectionGesture.ClickSelection, GestClickSel.IsChecked == true);
     }
 
     private void OnApplyExcluded(object sender, RoutedEventArgs e)

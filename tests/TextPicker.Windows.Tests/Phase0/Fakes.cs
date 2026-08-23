@@ -213,15 +213,39 @@ internal sealed class FakeFocusSource : IFocusTargetSource
 /// <summary>假 UIA 事件源（Phase 3 测试）。</summary>
 internal sealed class FakeUaEventSource : global::TextPicker.Windows.Uia.IUaEventSource
 {
+    private long _epoch;
+    private Action<long, global::TextPicker.Windows.Uia.UaSignalKind>? _onSignal;
+
     public void Start(long epoch, Action<long, global::TextPicker.Windows.Uia.UaSignalKind> onSignal)
     {
+        _epoch = epoch;
+        _onSignal = onSignal;
     }
 
     public bool WaitForSelectionSignal(TimeSpan timeout) => false;
 
+    /// <summary>注入一次 TextSelectionChanged 信号（ClickSelection 布防测试）。</summary>
+    public void RaiseSelectionChanged() => _onSignal?.Invoke(_epoch, global::TextPicker.Windows.Uia.UaSignalKind.TextSelectionChanged);
+
     public void Stop()
     {
     }
+
+    public void Dispose()
+    {
+    }
+}
+
+/// <summary>假观察者 lane（ClickSelection 预检测试）：可配置预检结果。</summary>
+internal sealed class FakeObserverLane : SelectionPicker.IObserverLane
+{
+    /// <summary>强制布尔结果（ClickSelection 预检桩）；null = 执行真实工作。</summary>
+    public bool? ForcedBoolResult { get; set; }
+
+    public Task<T> RunAsync<T>(Func<T> work, string? targetKey, CancellationToken ct)
+        => ForcedBoolResult is { } forced && typeof(T) == typeof(bool)
+            ? Task.FromResult((T)(object)forced)
+            : Task.Run(work, ct);
 
     public void Dispose()
     {

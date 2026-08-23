@@ -39,6 +39,11 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     private long _lastStreamReadTimestamp;
     private int _streamInFlight;
 
+    // 点击型选区变化（ClickSelection）布防：普通单击 → UIA TextSelectionChanged 确认 → 非折叠预检 → 合成手势
+    private ClickWatch? _clickWatch;
+
+    private readonly record struct ClickWatch(long ArmedTimestamp, long Epoch, int ProcessId, nint WindowHandle, PhysicalScreenPoint Down, PhysicalScreenPoint Up);
+
     // counters（string-free，ADR-0008）
     private long _candidatesPublished;
     private long _capturesSucceeded;
@@ -125,6 +130,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
 
             _inFlight = null;
             _lastCaptureInvalidated = true;     // 冻结最后值，Stop 后不再发失效
+            _clickWatch = null;
             foreach (var cts in _pendingRequests.Values)
             {
                 cts.Cancel();
@@ -392,6 +398,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 case SelectionGesture.ShiftClick: o.ShiftClickEnabled = enabled; break;
                 case SelectionGesture.CtrlA: o.CtrlAEnabled = enabled; break;
                 case SelectionGesture.ShiftKeyboard: o.ShiftKeyboardEnabled = enabled; break;
+                case SelectionGesture.ClickSelection: o.ClickSelectionEnabled = enabled; break;
                 default: throw new ArgumentOutOfRangeException(nameof(gesture), gesture, null);
             }
 
@@ -468,6 +475,7 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     internal void EnqueueUaSignal(long epoch, UaSignalKind kind)
     {
         List<Action<SelectionContentChangedEventArgs>>? subscribers = null;
+        ClickWatch? watchToVerify = null;
         lock (_gate)
         {
             if (!_running || epoch != _epoch)
@@ -475,22 +483,79 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 return;    // 旧 epoch 迟到回调：不产生任何公开事件（ADR-0002）
             }
 
-            if (kind == UaSignalKind.TextSelectionChanged && _contentSubscribers.Count > 0)
+            if (kind == UaSignalKind.TextSelectionChanged)
             {
-                // 双闸：150ms 最小观测间隔 + 在飞上限 1（40ms 合并由 UIA 事件天然节流近似）。
-                var now = _time.GetTimestamp();
-                if (_streamInFlight == 0 && _time.GetElapsedTime(_lastStreamReadTimestamp, now) >= TimeSpan.FromMilliseconds(150))
+                // 点击型选区变化：布防窗口内的选区变化事件 → 非折叠预检 → 合成 ClickSelection 手势。
+                if (_clickWatch is { } watch && _time.GetElapsedTime(watch.ArmedTimestamp, _time.GetTimestamp()) <= _options.ClickSelectionWindow)
                 {
-                    _streamInFlight = 1;
-                    _lastStreamReadTimestamp = now;
-                    subscribers = new List<Action<SelectionContentChangedEventArgs>>(_contentSubscribers);
+                    watchToVerify = watch;
+                    _clickWatch = null;    // 单发：一次布防只消费一次事件
+                }
+
+                if (_contentSubscribers.Count > 0)
+                {
+                    // 双闸：150ms 最小观测间隔 + 在飞上限 1（40ms 合并由 UIA 事件天然节流近似）。
+                    var now = _time.GetTimestamp();
+                    if (_streamInFlight == 0 && _time.GetElapsedTime(_lastStreamReadTimestamp, now) >= TimeSpan.FromMilliseconds(150))
+                    {
+                        _streamInFlight = 1;
+                        _lastStreamReadTimestamp = now;
+                        subscribers = new List<Action<SelectionContentChangedEventArgs>>(_contentSubscribers);
+                    }
                 }
             }
+        }
+
+        if (watchToVerify is { } toVerify)
+        {
+            _ = VerifyClickSelectionAsync(toVerify);
         }
 
         if (subscribers != null)
         {
             _ = PushContentStreamAsync(epoch, subscribers);
+        }
+    }
+
+    /// <summary>ClickSelection 防噪闸：确认焦点元素持有该进程的非折叠选区后才合成手势；否则静默丢弃计数。</summary>
+    private async Task VerifyClickSelectionAsync(ClickWatch watch)
+    {
+        bool nonCollapsed;
+        try
+        {
+            nonCollapsed = await _observerLane.RunAsync(
+                () => ClickSelectionPrecheck.HasNonCollapsedSelection(watch.ProcessId),
+                targetKey: $"pid:{watch.ProcessId}",
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException)
+        {
+            nonCollapsed = false;    // 观察者 lane 不可用：按无变化处理
+        }
+
+        lock (_gate)
+        {
+            if (!_running || watch.Epoch != _epoch)
+            {
+                return;
+            }
+
+            if (!nonCollapsed)
+            {
+                _gestureDrops[GestureDropReason.ClickSelectionNoChange] =
+                    _gestureDrops.TryGetValue(GestureDropReason.ClickSelectionNoChange, out var n) ? n + 1 : 1;
+                return;
+            }
+
+            OnGestureDetected(this, new GestureDetectedEventArgs
+            {
+                Epoch = watch.Epoch,
+                Gesture = SelectionGesture.ClickSelection,
+                TargetProcessId = watch.ProcessId,
+                TargetWindowHandle = watch.WindowHandle,
+                DownPoint = watch.Down,
+                UpPoint = watch.Up,
+            });
         }
     }
 
@@ -540,6 +605,8 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 _filteredGestures++;
                 return;
             }
+
+            _clickWatch = null;    // 真手势优先：清除点击布防（防双击第二击的选区事件重复触发）
 
             // 新手势终结旧生命周期：在飞 → Superseded；已完成捕获 → Invalidated(NewSelection)。
             if (_inFlight is { } prev && !prev.TerminalPublished)
@@ -620,7 +687,8 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
         }
     }
 
-    /// <summary>普通单击（无手势）：捕获完成后 → Invalidated(OutsideClick)；消费者豁免窗口上的单击不失效。</summary>
+    /// <summary>普通单击（无手势）：捕获完成后 → Invalidated(OutsideClick)（消费者豁免窗口除外）；
+    /// 同时为点击型选区变化布防（ClickSelection：Word 行首选行等，v1.1）。</summary>
     private void OnPlainClickObserved(object? sender, PlainClickEventArgs args)
     {
         lock (_gate)
@@ -630,9 +698,21 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
                 return;
             }
 
-            if (_lastCapture?.Generation is { } generation && !_lastCaptureInvalidated && !_consumerWindows.Contains(args.Click.Foreground.WindowHandle))
+            bool consumerWindow = _consumerWindows.Contains(args.Click.Foreground.WindowHandle);
+            if (_lastCapture?.Generation is { } generation && !_lastCaptureInvalidated && !consumerWindow)
             {
                 InvalidateLiveCapture(generation, SelectionInvalidationReason.OutsideClick);
+            }
+
+            if (_options.ClickSelectionEnabled && !consumerWindow && args.Click.Foreground.ProcessId != Environment.ProcessId)
+            {
+                _clickWatch = new ClickWatch(
+                    _time.GetTimestamp(),
+                    args.Epoch,
+                    args.Click.Foreground.ProcessId,
+                    args.Click.Foreground.WindowHandle,
+                    args.Click.DownPoint,
+                    args.Click.UpPoint);
             }
         }
     }
