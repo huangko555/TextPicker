@@ -46,7 +46,7 @@
         <GroupBox Grid.Column="1" Header="事件流（正文默认打码：长度+哈希；永不落盘）" Margin="0,0,6,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="4,2">
-                    <CheckBox x:Name="RevealCheck" Content="揭示正文（仅本窗口显示）" Checked="OnRevealChanged" Unchecked="OnRevealChanged"/>
+                    <CheckBox x:Name="RevealCheck" Content="揭示正文（仅本窗口显示）" Click="OnRevealChanged"/>
                     <Button Content="显式捕获" Click="OnExplicitCapture" Margin="12,0,0,0" Padding="6,1"/>
                     <Button Content="清空" Click="OnClearStream" Margin="6,0,0,0" Padding="6,1"/>
                 </StackPanel>
@@ -60,28 +60,28 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="4">
                     <TextBlock Text="手势开关" FontWeight="Bold" Margin="0,4,0,2"/>
-                    <CheckBox x:Name="GestBox" Content="框选 BoxSelect" IsChecked="True" Checked="OnGestureToggle" Unchecked="OnGestureToggle"/>
-                    <CheckBox x:Name="GestClick" Content="多击 MultiClick" IsChecked="True" Checked="OnGestureToggle" Unchecked="OnGestureToggle"/>
-                    <CheckBox x:Name="GestShift" Content="Shift 点击" IsChecked="True" Checked="OnGestureToggle" Unchecked="OnGestureToggle"/>
-                    <CheckBox x:Name="GestCtrlA" Content="Ctrl+A" IsChecked="True" Checked="OnGestureToggle" Unchecked="OnGestureToggle"/>
-                    <CheckBox x:Name="GestKbd" Content="Shift 键盘选择" IsChecked="True" Checked="OnGestureToggle" Unchecked="OnGestureToggle"/>
+                    <CheckBox x:Name="GestBox" Content="框选 BoxSelect" IsChecked="True" Click="OnGestureToggle"/>
+                    <CheckBox x:Name="GestClick" Content="多击 MultiClick" IsChecked="True" Click="OnGestureToggle"/>
+                    <CheckBox x:Name="GestShift" Content="Shift 点击" IsChecked="True" Click="OnGestureToggle"/>
+                    <CheckBox x:Name="GestCtrlA" Content="Ctrl+A" IsChecked="True" Click="OnGestureToggle"/>
+                    <CheckBox x:Name="GestKbd" Content="Shift 键盘选择" IsChecked="True" Click="OnGestureToggle"/>
 
                     <TextBlock Text="排除进程（逗号分隔）" FontWeight="Bold" Margin="0,10,0,2"/>
                     <TextBox x:Name="ExcludedBox" Text=""/>
                     <Button Content="应用排除列表" Click="OnApplyExcluded" Margin="0,3,0,0" Padding="2"/>
 
                     <TextBlock Text="选项" FontWeight="Bold" Margin="0,10,0,2"/>
-                    <CheckBox x:Name="OptFullScreen" Content="全屏时暂停" IsChecked="True" Checked="OnOptionToggle" Unchecked="OnOptionToggle"/>
-                    <CheckBox x:Name="OptWholeValue" Content="AllowWholeValueBackend" Checked="OnOptionToggle" Unchecked="OnOptionToggle"/>
-                    <CheckBox x:Name="OptSurrounding" Content="EnrichSurrounding" Checked="OnOptionToggle" Unchecked="OnOptionToggle"/>
-                    <CheckBox x:Name="OptStream" Content="内容流订阅（隐私升档）" Checked="OnStreamToggle" Unchecked="OnStreamToggle"/>
+                    <CheckBox x:Name="OptFullScreen" Content="全屏时暂停" IsChecked="True" Click="OnOptionToggle"/>
+                    <CheckBox x:Name="OptWholeValue" Content="AllowWholeValueBackend" Click="OnOptionToggle"/>
+                    <CheckBox x:Name="OptSurrounding" Content="EnrichSurrounding" Click="OnOptionToggle"/>
+                    <CheckBox x:Name="OptStream" Content="内容流订阅（隐私升档）" Click="OnStreamToggle"/>
 
                     <TextBlock Text="Probe" FontWeight="Bold" Margin="0,10,0,2"/>
                     <CheckBox x:Name="ProbeText" Content="includeText"/>
                     <Button Content="Probe 目标（指针位置）" Click="OnProbe" Margin="0,3,0,0" Padding="2"/>
 
                     <TextBlock Text="RegisterConsumerWindow 演示" FontWeight="Bold" Margin="0,10,0,2"/>
-                    <CheckBox x:Name="ConsumerReg" Content="注册本窗口为消费者（豁免）" Checked="OnConsumerToggle" Unchecked="OnConsumerToggle"/>
+                    <CheckBox x:Name="ConsumerReg" Content="注册本窗口为消费者（豁免）" Click="OnConsumerToggle"/>
                     <TextBlock Text="注册后：点击本面板按钮不打断当前候选。" TextWrapping="Wrap" FontSize="11" Foreground="Gray"/>
 
                     <TextBlock Text="最近捕获（Completeness/ContextKind/Freshness）" FontWeight="Bold" Margin="0,10,0,2"/>
