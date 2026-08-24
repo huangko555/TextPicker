@@ -86,7 +86,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | 全屏视频 / 游戏 | 自动暂停 | **Known-good**；全屏目标拖选未产生候选 | Windows 11 24H2 |
 | 调试面板自身窗口划选 | 不产生候选（OwnProcess） | **Known-good**；策略/契约测试覆盖 | TextPicker.App |
 | RegisterConsumerWindow 演示：点击消费者按钮 | 不打断当前候选 | **Known-good**；门面测试覆盖 | TextPicker.App |
-| 跨 DPI 显示器（主 100% ↔ 副 150%）选择 | 锚点在结束端附近且不越工作区 | **Unknown**；窗口移动成功，但合成坐标未稳定命中编辑区 | Windows 11 24H2 记事本 |
+| 跨 DPI 显示器（主 100% ↔ 副 150%）选择 | 锚点在结束端附近且不越工作区 | **Known-good**；副屏 150% 下人工拖选捕获 22 字符，锚点与释放端同为 (3046,315) 且位于目标窗口内 | Windows 11 24H2 记事本 |
 
 ### Phase 2 执行期局部决策
 

@@ -35,8 +35,8 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|chrome|edge|edge-manual|word|word-manual|admin]");
-            Console.WriteLine("all 不包含需要人工操作的 Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|dpi-manual|chrome|edge|edge-manual|word|word-manual|admin]");
+            Console.WriteLine("all 不包含需要人工操作的跨 DPI、Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
 
@@ -51,7 +51,7 @@ internal sealed class SmokeRunner : IDisposable
         Log($"== picker 启动，剪贴板序列号基线 {_clipboardBefore} ==");
 
         var wanted = scenario == "all"
-            ? new[] { "notepad", "fullscreen", "ownproc", "dpi", "chrome" }
+            ? new[] { "notepad", "fullscreen", "ownproc", "chrome" }
             : scenario.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var name in wanted)
@@ -65,6 +65,7 @@ internal sealed class SmokeRunner : IDisposable
                     case "fullscreen": await FullScreenPause(); break;
                     case "ownproc": OwnProcessNote(); break;
                     case "dpi": await CrossDpi(); break;
+                    case "dpi-manual": await CrossDpi(); break;
                     case "chrome": await Browser("chrome"); break;
                     case "edge": await Browser("edge", "manual"); break;
                     case "edge-manual": await Browser("edge", "manual"); break;
@@ -179,25 +180,30 @@ internal sealed class SmokeRunner : IDisposable
             return;
         }
 
-        var (hwnd, pid) = LaunchWindowed("notepad.exe", "", "Notepad", 10_000);
+        var textPath = Path.Combine(Path.GetTempPath(), $"textpicker-smoke-dpi-{Environment.ProcessId}.txt");
+        File.WriteAllText(textPath, "secondary monitor dpi text");
+        var (hwnd, pid) = LaunchWindowed("notepad.exe", $"\"{textPath}\"", "Notepad", 10_000);
         InputSynth.FocusWindow(hwnd);
         InputSynth.PlaceWindow(hwnd, targetPoint.Value.X, targetPoint.Value.Y, 900, 500);
         Thread.Sleep(600);
-        InputSynth.TypeText("secondary monitor dpi text");
-        Thread.Sleep(300);
 
         var rect = InputSynth.WindowRect(hwnd);
         var scale = InputSynth.WindowDpiScale(hwnd);
-        int startX = rect.Left + (int)(80 * scale);
-        int lineY = rect.Top + (int)(130 * scale);
-        int endX = rect.Left + (int)(440 * scale);
-        var ok = await ExpectCapture(() => InputSynth.Drag(startX, lineY, endX, lineY + (int)(10 * scale)));
+        var ok = await ExpectManualCapture("请在副屏记事本文字上手动拖选一段", SelectionGesture.BoxSelect);
         if (ok && _picker.LastCapture is { AnchorRect: { } anchor })
         {
-            Console.WriteLine($"跨 DPI：锚点 ({anchor.Left:F0},{anchor.Top:F0}) 尺寸 {anchor.Width:F0}x{anchor.Height:F0}（副屏物理坐标）");
+            var release = InputSynth.CursorPosition();
+            Check(
+                anchor.Left >= rect.Left && anchor.Right <= rect.Right && anchor.Top >= rect.Top && anchor.Bottom <= rect.Bottom,
+                $"跨 DPI 锚点位于副屏目标窗口内：({anchor.Left:F0},{anchor.Top:F0}) {anchor.Width:F0}x{anchor.Height:F0}，窗口 DPI {scale * 100:F0}%");
+            Check(
+                release.X >= anchor.Left - 80 && release.X <= anchor.Right + 80
+                    && release.Y >= anchor.Top - 80 && release.Y <= anchor.Bottom + 80,
+                $"跨 DPI 锚点接近释放端：释放 ({release.X},{release.Y})");
         }
 
         KillPid(pid);
+        TryDeleteFile(textPath);
     }
 
     private async Task Browser(string kind, string? only = null)
@@ -254,7 +260,7 @@ internal sealed class SmokeRunner : IDisposable
         }
     }
 
-    private async Task ExpectManualCapture(string instruction, SelectionGesture? expectGesture = null)
+    private async Task<bool> ExpectManualCapture(string instruction, SelectionGesture? expectGesture = null)
     {
         var before = Snapshot();
         var failuresBefore = _picker.Counters.CapturesFailed;
@@ -268,7 +274,7 @@ internal sealed class SmokeRunner : IDisposable
                 var actual = _picker.LastCapture?.Gesture;
                 Check(expectGesture == null || actual == expectGesture,
                     expectGesture == null ? $"手动捕获 {actual}" : $"手动捕获：期望 {expectGesture}，实际 {actual}");
-                return;
+                return expectGesture == null || actual == expectGesture;
             }
 
             if (_picker.Counters.CapturesFailed > failuresBefore)
@@ -278,6 +284,7 @@ internal sealed class SmokeRunner : IDisposable
         }
 
         Check(false, $"手动捕获（最近失败：{LastFailure() ?? "45 秒内没有检测到选择手势"}）");
+        return false;
     }
 
     private async Task Word()
@@ -359,6 +366,20 @@ internal sealed class SmokeRunner : IDisposable
         try
         {
             Directory.Delete(path, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
         }
         catch (IOException)
         {

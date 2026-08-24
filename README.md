@@ -34,7 +34,7 @@ dotnet build TextPicker.slnx -c Debug
 dotnet test TextPicker.slnx
 ```
 
-实机烟测可按场景运行，例如 `dotnet run --project src/TextPicker.SmokeRunner -- notepad`。Edge 和 Word 的固定坐标容易误点，因此 `edge`、`word` 使用人工操作提示；`admin` 会触发 UAC。这些场景均不会被 `all` 自动运行，其余可用场景见 `--help`。
+实机烟测可按场景运行，例如 `dotnet run --project src/TextPicker.SmokeRunner -- notepad`。跨 DPI、Edge 和 Word 的固定坐标容易误点，因此 `dpi`、`edge`、`word` 使用人工操作提示；`admin` 会触发 UAC。这些场景均不会被 `all` 自动运行，其余可用场景见 `--help`。
 
 x64、`TreatWarningsAsErrors`、.NET 10（SDK 10.0.302，见 global.json）。
 

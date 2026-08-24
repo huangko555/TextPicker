@@ -81,6 +81,9 @@ internal static unsafe class InputSynth
     private static extern bool ClientToScreen(nint hwnd, ref POINT point);
 
     [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT point);
+
+    [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int index);
 
     [DllImport("user32.dll")]
@@ -236,6 +239,8 @@ internal static unsafe class InputSynth
         var point = new POINT();
         return ClientToScreen(hwnd, ref point) ? point : default;
     }
+
+    public static POINT CursorPosition() => GetCursorPos(out var point) ? point : default;
 
     /// <summary>返回非主屏上的稳定放置点；没有第二块屏幕时返回 null。</summary>
     public static POINT? SecondaryScreenPoint()
