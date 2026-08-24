@@ -75,7 +75,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | 场景 | 预期 | 结果 | 版本 |
 |---|---|---|---|
 | 记事本：拖选 / 双击 / 三击 / Ctrl+A / 反向多行 | Captured，剪贴板序列号不变，锚点在释放端 | **Known-good**；多轮实机烟测通过 | Windows 11 24H2 记事本 |
-| 记事本：Shift+方向键 | Captured，剪贴板序列号不变 | **Unknown**；合成输入未稳定触发候选，状态机单测通过 | Windows 11 24H2 记事本 |
+| 记事本：Shift+方向键 | Captured，剪贴板序列号不变 | **Known-good**；人工操作识别为 ShiftKeyboard，捕获 1 字符，新鲜度证据为 SelectionChangedEvent | Windows 11 24H2 记事本 |
 | Word：拖选 / Ctrl+Shift+Home / 点击页边距选整行 | Captured，剪贴板序列号不变 | **Known-good**；人工操作分别捕获 30 / 62 / 28 字符，手势准确识别为 BoxSelect / ShiftKeyboard / ClickSelection | Office16 Word |
 | Chrome 纯文本页 | Captured | **Known-good**；拖选、双击通过 | Chrome 151.0.4129.93 |
 | Chrome 标准输入框 / contenteditable | Captured | **Known-good**；两类拖选均通过 | Chrome 151.0.4129.93 |

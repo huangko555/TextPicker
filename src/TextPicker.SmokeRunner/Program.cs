@@ -35,7 +35,7 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|dpi-manual|chrome|edge|edge-manual|word|word-manual|admin]");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|edge|edge-manual|word|word-manual|admin]");
             Console.WriteLine("all 不包含需要人工操作的跨 DPI、Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
@@ -62,6 +62,7 @@ internal sealed class SmokeRunner : IDisposable
                 switch (name)
                 {
                     case "notepad": await NotepadGestures(); break;
+                    case "notepad-keyboard": await NotepadKeyboardManual(); break;
                     case "fullscreen": await FullScreenPause(); break;
                     case "ownproc": OwnProcessNote(); break;
                     case "dpi": await CrossDpi(); break;
@@ -166,6 +167,23 @@ internal sealed class SmokeRunner : IDisposable
         Check(after.Candidates == before.Candidates, $"全屏暂停：拖选未产生候选（{before.Candidates}→{after.Candidates}）");
 
         KillPid(pid);
+    }
+
+    private async Task NotepadKeyboardManual()
+    {
+        var textPath = Path.Combine(Path.GetTempPath(), $"textpicker-smoke-keyboard-{Environment.ProcessId}.txt");
+        File.WriteAllText(textPath, "keyboard selection smoke text");
+        var (hwnd, pid) = LaunchWindowed("notepad.exe", $"\"{textPath}\"", "Notepad", 10_000);
+        InputSynth.FocusWindow(hwnd);
+        InputSynth.PlaceWindow(hwnd, 120, 120, 900, 500);
+        Thread.Sleep(600);
+
+        await ExpectManualCapture(
+            "请单击测试文字中间放置光标，然后按住 Shift 并按几次右方向键，最后松开 Shift",
+            SelectionGesture.ShiftKeyboard);
+
+        KillPid(pid);
+        TryDeleteFile(textPath);
     }
 
     private static void OwnProcessNote()
