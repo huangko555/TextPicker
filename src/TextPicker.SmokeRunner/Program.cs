@@ -35,8 +35,8 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|chrome|edge|edge-manual|word|admin]");
-            Console.WriteLine("all 不包含需要人工操作的 Edge 和 UAC admin 场景；多个场景可用逗号连接。");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|chrome|edge|edge-manual|word|word-manual|admin]");
+            Console.WriteLine("all 不包含需要人工操作的 Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
 
@@ -51,7 +51,7 @@ internal sealed class SmokeRunner : IDisposable
         Log($"== picker 启动，剪贴板序列号基线 {_clipboardBefore} ==");
 
         var wanted = scenario == "all"
-            ? new[] { "notepad", "fullscreen", "ownproc", "dpi", "chrome", "word" }
+            ? new[] { "notepad", "fullscreen", "ownproc", "dpi", "chrome" }
             : scenario.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var name in wanted)
@@ -69,6 +69,7 @@ internal sealed class SmokeRunner : IDisposable
                     case "edge": await Browser("edge", "manual"); break;
                     case "edge-manual": await Browser("edge", "manual"); break;
                     case "word": await Word(); break;
+                    case "word-manual": await Word(); break;
                     case "admin": await AdminNotepad(); break;
                     default: Check(false, $"未知场景 {name}（使用 --help 查看可用场景）"); break;
                 }
@@ -253,7 +254,7 @@ internal sealed class SmokeRunner : IDisposable
         }
     }
 
-    private async Task ExpectManualCapture(string instruction)
+    private async Task ExpectManualCapture(string instruction, SelectionGesture? expectGesture = null)
     {
         var before = Snapshot();
         var failuresBefore = _picker.Counters.CapturesFailed;
@@ -264,7 +265,9 @@ internal sealed class SmokeRunner : IDisposable
             var now = Snapshot();
             if (now.Captured > before.Captured)
             {
-                Check(true, $"手动捕获 {_picker.LastCapture?.Gesture}");
+                var actual = _picker.LastCapture?.Gesture;
+                Check(expectGesture == null || actual == expectGesture,
+                    expectGesture == null ? $"手动捕获 {actual}" : $"手动捕获：期望 {expectGesture}，实际 {actual}");
                 return;
             }
 
@@ -294,27 +297,9 @@ internal sealed class SmokeRunner : IDisposable
         InputSynth.PlaceWindow(hwnd, 120, 120, 1000, 700);
         Thread.Sleep(500);
 
-        var rect = InputSynth.WindowRect(hwnd);
-        int textY = rect.Top + 200;
-        Step("Word 框选");
-        await ExpectCapture(() => InputSynth.Drag(rect.Left + 170, textY, rect.Left + 590, textY + 10));
-
-        Step("Word Ctrl+Shift+Home");
-        await ExpectCapture(() =>
-        {
-            InputSynth.Key(InputSynth.VK_CONTROL, down: true);
-            Thread.Sleep(100);
-            InputSynth.Key(InputSynth.VK_SHIFT, down: true);
-            Thread.Sleep(100);
-            InputSynth.KeyTap(0x24, holdMs: 50);
-            Thread.Sleep(150);
-            InputSynth.Key(InputSynth.VK_SHIFT, down: false);
-            Thread.Sleep(100);
-            InputSynth.Key(InputSynth.VK_CONTROL, down: false);
-        });
-
-        Step("Word 点击行首选整行（ClickSelection）");
-        await ExpectCapture(() => InputSynth.Click(rect.Left + 160, textY + 40, holdMs: 50), SelectionGesture.ClickSelection);
+        await ExpectManualCapture("请在 Word 正文中手动拖选一段文字", SelectionGesture.BoxSelect);
+        await ExpectManualCapture("请先单击第二或第三行正文，再按 Ctrl+Shift+Home", SelectionGesture.ShiftKeyboard);
+        await ExpectManualCapture("请单击第三行左侧页边距，使 Word 选中整行", SelectionGesture.ClickSelection);
 
         KillPid(pid);
     }
