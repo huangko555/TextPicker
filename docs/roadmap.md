@@ -45,7 +45,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | 2 | 2026-08-23 | ✅ 102/102 全绿（Core 59 + Windows 43） | OwnedRawInputSource（自持线程+隐藏窗口+INPUTSINK+fail-fast）+ WM_INPUT 现场冒烟（SendInput 合成键盘实测可达）+ QueryRunner（超时/熔断/卡死置换/孤儿上限/quarantine）+ LaneRoutedBackend + 门面失效跟踪（Esc/点外/前台/TargetGone + 消费者豁免）+ WinEvent 焦点源 + 全屏暂停。局部决策见下。 |
 | 3 | 2026-08-23 | ✅ 111/111 全绿（Core 59 + Windows 52） | UiaSelectionBackend（ADR-5 全链：PID 判序/密码双查/父链/多 range 拒绝/截断/LocalContext/几何/方向权威/锚点链）+ CaretProbeChain 三级 + 托管 UIA 事件源（Lane 1）+ 观察者 lane（caret/state/probe/内容流）+ 进程内 WPF 宿主端到端 9 测试。局部决策见下。 |
 | 4 | 2026-08-23 | ✅ 111/111 全绿 + 面板启动冒烟通过 | WPF 调试面板（PMv2 manifest；常驻区：指针/相位/焦点/caret/剪贴板序列号/全屏/Counters；事件流：正文默认打码 sha256+长度、揭示开关永不落盘；交互区：五手势开关/排除进程/Probe/选项热更/内容流订阅/消费者窗口演示）。|
-| 5 | 2026-08-24 | ✅ 119/119 全绿；三态矩阵已记录 | 新增可重复运行的 SmokeRunner；修复 ClickSelection 与多击竞态、UIA stale element 回退、range owner 释放语义及超时配置热更。实机中未能稳定自动定位或需人工授权的场景保留为 Unknown，不据此宣称通过。 |
+| 5 | 2026-08-24 | ✅ 119/119 全绿；13 Known-good / 2 Known-bad / 0 Unknown | 新增可重复运行的 SmokeRunner；修复 ClickSelection 与多击竞态、UIA stale element 回退、range owner 释放语义及超时配置热更。已确认的边界为 Google Docs `EmptySelection`，以及无 `uiAccess` 时管理员窗口无手势候选且显式捕获返回 `BackendUnavailable`。 |
 
 ### Phase 1 执行期局部决策
 

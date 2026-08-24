@@ -27,6 +27,10 @@ tests/
 - [docs/roadmap.md](docs/roadmap.md) — Phase 0–5 执行顺序、过门记录、冒烟矩阵三态表
 - [docs/adr/](docs/adr/) — 架构决策记录（ADR-0001..0008 为冻结决策）
 
+## 当前状态
+
+Phase 0–5 已完成，119 项测试全绿。实机矩阵为 13 Known-good / 2 Known-bad / 0 Unknown；已知边界是 Google Docs 不通过 UIA 暴露选区正文，以及普通权限、无 `uiAccess` 的进程不能可靠观察管理员窗口。
+
 ## 构建与测试
 
 ```
