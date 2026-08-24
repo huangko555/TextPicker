@@ -35,8 +35,8 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|chrome|edge|word|admin]");
-            Console.WriteLine("all 不包含需要 UAC 确认的 admin 场景；多个场景可用逗号连接。");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|fullscreen|ownproc|dpi|chrome|edge|edge-manual|word|admin]");
+            Console.WriteLine("all 不包含需要人工操作的 Edge 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
 
@@ -51,7 +51,7 @@ internal sealed class SmokeRunner : IDisposable
         Log($"== picker 启动，剪贴板序列号基线 {_clipboardBefore} ==");
 
         var wanted = scenario == "all"
-            ? new[] { "notepad", "fullscreen", "ownproc", "dpi", "chrome", "edge", "word" }
+            ? new[] { "notepad", "fullscreen", "ownproc", "dpi", "chrome", "word" }
             : scenario.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         foreach (var name in wanted)
@@ -66,7 +66,8 @@ internal sealed class SmokeRunner : IDisposable
                     case "ownproc": OwnProcessNote(); break;
                     case "dpi": await CrossDpi(); break;
                     case "chrome": await Browser("chrome"); break;
-                    case "edge": await Browser("edge"); break;
+                    case "edge": await Browser("edge", "manual"); break;
+                    case "edge-manual": await Browser("edge", "manual"); break;
                     case "word": await Word(); break;
                     case "admin": await AdminNotepad(); break;
                     default: Check(false, $"未知场景 {name}（使用 --help 查看可用场景）"); break;
@@ -198,7 +199,7 @@ internal sealed class SmokeRunner : IDisposable
         KillPid(pid);
     }
 
-    private async Task Browser(string kind)
+    private async Task Browser(string kind, string? only = null)
     {
         var htmlPath = Path.Combine(Path.GetTempPath(), "textpicker-smoke.html");
         File.WriteAllText(htmlPath, "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font:18px sans-serif;margin:0}#p1{position:absolute;left:40px;top:40px}#p2{position:absolute;left:40px;top:100px}input{position:absolute;left:40px;top:180px;font-size:16px;width:420px}#editable{position:absolute;left:40px;top:260px;border:1px solid #999;padding:8px;width:520px}</style></head><body><p id=\"p1\">The quick brown fox jumps over the lazy dog again and again for the smoke test paragraph.</p><p id=\"p2\">Second paragraph with more words to drag across.</p><input value=\"standard input value text\"><div id=\"editable\" contenteditable=\"true\">contenteditable area text content</div></body></html>");
@@ -210,7 +211,7 @@ internal sealed class SmokeRunner : IDisposable
         var preserveProfile = kind == "edge";
         var profilePath = Path.Combine(
             Path.GetTempPath(),
-            preserveProfile ? "textpicker-smoke-edge" : $"textpicker-smoke-{kind}-{Environment.ProcessId}");
+            preserveProfile ? "textpicker-smoke-edge-manual" : $"textpicker-smoke-{kind}-{Environment.ProcessId}");
         Directory.CreateDirectory(profilePath);
         var browserArgs = $"--user-data-dir=\"{profilePath}\" --no-first-run --disable-default-apps --app=\"file:///{htmlPath.Replace('\\', '/')}\"";
         var (hwnd, pid) = LaunchWindowed(exe, browserArgs, kind == "chrome" ? "chrome" : "msedge", 15_000);
@@ -222,25 +223,58 @@ internal sealed class SmokeRunner : IDisposable
         var client = InputSynth.ClientOrigin(hwnd);
         int y1 = client.Y + 65;
 
-        Step("纯文本页框选");
-        await ExpectCapture(() => InputSynth.Drag(client.X + 50, y1, client.X + 620, y1 + 12));
+        if (only == "manual")
+        {
+            await ExpectManualCapture("请在第一行普通文字上手动拖选一次");
+            await ExpectManualCapture("请在页面中间的标准输入框内手动拖选一次");
+            await ExpectManualCapture("请在页面下方带边框的 contenteditable 区域内手动拖选一次");
+        }
+        else
+        {
+            Step("纯文本页框选");
+            await ExpectCapture(() => InputSynth.Drag(client.X + 50, y1, client.X + 620, y1 + 12));
 
-        Step("纯文本页双击");
-        await ExpectCapture(() => InputSynth.DoubleClick(client.X + 190, y1));
+            Step("纯文本页双击");
+            await ExpectCapture(() => InputSynth.DoubleClick(client.X + 190, y1));
 
-        Step("标准输入框拖选");
-        var yInput = client.Y + 192;
-        await ExpectCapture(() => InputSynth.Drag(client.X + 55, yInput, client.X + 380, yInput + 8));
+            Step("标准输入框拖选");
+            var yInput = client.Y + 192;
+            await ExpectCapture(() => InputSynth.Drag(client.X + 55, yInput, client.X + 380, yInput + 8));
 
-        Step("contenteditable 拖选");
-        var yCe = client.Y + 280;
-        await ExpectCapture(() => InputSynth.Drag(client.X + 55, yCe, client.X + 420, yCe + 10));
+            Step("contenteditable 拖选");
+            var yCe = client.Y + 280;
+            await ExpectCapture(() => InputSynth.Drag(client.X + 55, yCe, client.X + 420, yCe + 10));
+        }
 
         KillPid(pid, entireProcessTree: true);
         if (!preserveProfile)
         {
             TryDeleteDirectory(profilePath);
         }
+    }
+
+    private async Task ExpectManualCapture(string instruction)
+    {
+        var before = Snapshot();
+        var failuresBefore = _picker.Counters.CapturesFailed;
+        Console.WriteLine($"{instruction}（等待 45 秒）");
+        for (int i = 0; i < 450; i++)
+        {
+            await Task.Delay(100);
+            var now = Snapshot();
+            if (now.Captured > before.Captured)
+            {
+                Check(true, $"手动捕获 {_picker.LastCapture?.Gesture}");
+                return;
+            }
+
+            if (_picker.Counters.CapturesFailed > failuresBefore)
+            {
+                break;
+            }
+        }
+
+        Check(false, $"手动捕获（最近失败：{LastFailure() ?? "45 秒内没有检测到选择手势"}）");
     }
 
     private async Task Word()

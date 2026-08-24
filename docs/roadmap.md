@@ -81,7 +81,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | Chrome 标准输入框 / contenteditable | Captured | **Known-good**；两类拖选均通过 | Chrome 151.0.4129.93 |
 | Chrome：跨域 iframe、Google Docs、PDF 查看器 | 实测填三态，不预设失败 | **Unknown**；本轮未覆盖 | Chrome 151.0.4129.93 |
 | Edge：纯文本双击 | Captured | **Known-good** | Edge 151.0.7922.173 |
-| Edge：纯文本拖选 / 标准输入框 / contenteditable | Captured | **Known-bad**；均返回 EmptyText | Edge 151.0.7922.173 |
+| Edge：纯文本拖选 / 标准输入框 / contenteditable | Captured | **Known-good**；人工拖选分别捕获 30 / 18 / 23 字符；先前 EmptyText 经确认是固定坐标未命中文字的测试误报 | Edge 151.0.7922.173 |
 | 管理员记事本 | AccessDenied 可诊断 | **Unknown**；提权助手已实现，未执行 UAC 烟测 | Windows 11 24H2 记事本 |
 | 全屏视频 / 游戏 | 自动暂停 | **Known-good**；全屏目标拖选未产生候选 | Windows 11 24H2 |
 | 调试面板自身窗口划选 | 不产生候选（OwnProcess） | **Known-good**；策略/契约测试覆盖 | TextPicker.App |
