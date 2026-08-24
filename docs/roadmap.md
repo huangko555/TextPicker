@@ -82,7 +82,7 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | Chrome：跨域 iframe、Google Docs、PDF 查看器 | 实测填三态，不预设失败 | **Unknown**；本轮未覆盖 | Chrome 151.0.4129.93 |
 | Edge：纯文本双击 | Captured | **Known-good** | Edge 151.0.7922.173 |
 | Edge：纯文本拖选 / 标准输入框 / contenteditable | Captured | **Known-good**；人工拖选分别捕获 30 / 18 / 23 字符；先前 EmptyText 经确认是固定坐标未命中文字的测试误报 | Edge 151.0.7922.173 |
-| 管理员记事本 | AccessDenied 可诊断 | **Unknown**；提权助手已实现，未执行 UAC 烟测 | Windows 11 24H2 记事本 |
+| 管理员记事本 | AccessDenied 可诊断 | **Known-bad**；三轮 UAC 实测中普通权限进程无手势候选，显式捕获稳定返回 BackendUnavailable，点位 Probe 未稳定暴露 AccessDenied；需 uiAccess 或同完整性 broker 才能可靠支持 | Windows 11 24H2 记事本 |
 | 全屏视频 / 游戏 | 自动暂停 | **Known-good**；全屏目标拖选未产生候选 | Windows 11 24H2 |
 | 调试面板自身窗口划选 | 不产生候选（OwnProcess） | **Known-good**；策略/契约测试覆盖 | TextPicker.App |
 | RegisterConsumerWindow 演示：点击消费者按钮 | 不打断当前候选 | **Known-good**；门面测试覆盖 | TextPicker.App |

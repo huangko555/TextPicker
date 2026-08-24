@@ -242,6 +242,8 @@ internal static unsafe class InputSynth
 
     public static POINT CursorPosition() => GetCursorPos(out var point) ? point : default;
 
+    public static TextPicker.PhysicalScreenPoint ToPhysicalPoint(POINT point) => new(point.X, point.Y);
+
     /// <summary>返回非主屏上的稳定放置点；没有第二块屏幕时返回 null。</summary>
     public static POINT? SecondaryScreenPoint()
     {

@@ -19,6 +19,8 @@
 
 Phase 0 契约测试 #1 锚定冲突复现与 fail-fast 行为。
 
+普通权限、无 `uiAccess` 的 Owned 模式不承诺观察高完整性前台应用。Phase 5 管理员记事本实测中没有产生手势候选，显式 UIA 捕获返回 `BackendUnavailable`，不能稳定细分为 `AccessDenied`。若消费者必须支持管理员窗口，需要将输入观察与 UIA 读取移入同完整性 broker，或采用满足 Windows 安装位置与签名约束的 `uiAccess` 进程；该能力不属于 v1。相关平台约束见微软的 [UIAccess 安全策略](https://learn.microsoft.com/windows/security/threat-protection/security-policy-settings/user-account-control-only-elevate-uiaccess-applications-that-are-installed-in-secure-locations) 与 [RAWINPUTDEVICE/RIDEV_INPUTSINK](https://learn.microsoft.com/windows/win32/api/winuser/ns-winuser-rawinputdevice)。
+
 ## 实现记录
 
 - [x] Phase 0：`RawInputRegistrationGuard`（Query/EnsureOwnable）+ `RawInputRegistrationConflict` + 契约测试 #1（本机复现双注册抢占）

@@ -313,7 +313,7 @@ internal sealed class SmokeRunner : IDisposable
 
     private async Task AdminNotepad()
     {
-        Console.WriteLine("!! 即将弹出一次 UAC：提权助手会启动并操作管理员记事本——请点「是」");
+        Console.WriteLine("!! 即将弹出一次 UAC：请点「是」，然后在管理员记事本文字上手动拖选一次（助手等待 15 秒）");
         var executable = Environment.ProcessPath ?? throw new InvalidOperationException("无法定位 SmokeRunner 可执行文件");
         var before = Snapshot();
         using var helper = Process.Start(new ProcessStartInfo(executable, "admin-helper")
@@ -321,14 +321,40 @@ internal sealed class SmokeRunner : IDisposable
             UseShellExecute = true,
             Verb = "runas",
         }) ?? throw new InvalidOperationException("无法启动提权输入助手");
+
+        SelectionCaptureResult? explicitResult = null;
+        TargetProbeResult? probeResult = null;
+        var deadline = Environment.TickCount64 + 25_000;
+        while (!helper.HasExited && Environment.TickCount64 < deadline)
+        {
+            var cursor = InputSynth.ToPhysicalPoint(InputSynth.CursorPosition());
+            probeResult = await _picker.ProbeTargetAsync(cursor, includeText: false, CancellationToken.None);
+            if (!probeResult.Success && probeResult.FailureReason == CaptureFailureReason.AccessDenied)
+            {
+                break;
+            }
+
+            explicitResult = await _picker.CaptureCurrentSelectionAsync(
+                cursor,
+                CancellationToken.None);
+            if (!explicitResult.Success && explicitResult.FailureReason == CaptureFailureReason.AccessDenied)
+            {
+                break;
+            }
+
+            await Task.Delay(250);
+        }
+
         await helper.WaitForExitAsync();
         await Task.Delay(750);
         var after = Snapshot();
         Check(helper.ExitCode == 0, $"管理员输入助手退出码 {helper.ExitCode}");
-
-        var counters = _picker.Counters;
-        bool accessDenied = counters.FailuresByReason.TryGetValue(CaptureFailureReason.AccessDenied, out var denied) && denied > 0;
-        Check(accessDenied, $"管理员目标：AccessDenied 可诊断（x{denied}；候选 {before.Candidates}→{after.Candidates}；失败明细：{string.Join(",", counters.FailuresByReason)}）");
+        var probeOutcome = probeResult == null ? "未执行" : probeResult.Success ? "Success" : probeResult.FailureReason?.ToString() ?? "失败（无原因）";
+        var explicitOutcome = explicitResult == null ? "未执行" : explicitResult.Success ? "Success" : explicitResult.FailureReason?.ToString() ?? "失败（无原因）";
+        Check(
+            probeResult is { Success: false, FailureReason: CaptureFailureReason.AccessDenied }
+                || explicitResult is { Success: false, FailureReason: CaptureFailureReason.AccessDenied },
+            $"管理员目标：点位 Probe={probeOutcome}，显式捕获={explicitOutcome}；手势候选 {before.Candidates}→{after.Candidates}（无 uiAccess 时允许为 0）");
     }
 
     // —— 基础设施 ——
@@ -464,10 +490,12 @@ internal static class AdminInputHelper
     public static int Run()
     {
         int pid = 0;
+        var textPath = Path.Combine(Path.GetTempPath(), $"textpicker-smoke-admin-{Environment.ProcessId}.txt");
         try
         {
+            File.WriteAllText(textPath, "elevated notepad smoke text");
             var existing = WindowFinder.SnapshotWindows("Notepad");
-            _ = Process.Start(new ProcessStartInfo("notepad.exe") { UseShellExecute = true })
+            _ = Process.Start(new ProcessStartInfo("notepad.exe", $"\"{textPath}\"") { UseShellExecute = true })
                 ?? throw new InvalidOperationException("无法启动管理员记事本");
             var (hwnd, targetPid) = WindowFinder.FindNewWindow(existing, "Notepad", 20_000);
             pid = targetPid;
@@ -479,11 +507,8 @@ internal static class AdminInputHelper
             InputSynth.FocusWindow(hwnd);
             InputSynth.PlaceWindow(hwnd, 120, 120, 900, 500);
             Thread.Sleep(500);
-            InputSynth.TypeText("elevated notepad smoke text");
-            Thread.Sleep(300);
-            var rect = InputSynth.WindowRect(hwnd);
-            InputSynth.Drag(rect.Left + 80, rect.Top + 130, rect.Left + 490, rect.Top + 145);
-            Thread.Sleep(1500);
+            Console.WriteLine("请在管理员记事本的测试文字上手动拖选一次……");
+            Thread.Sleep(15_000);
             return 0;
         }
         catch (Exception exception)
@@ -506,6 +531,17 @@ internal static class AdminInputHelper
                 catch (InvalidOperationException)
                 {
                 }
+            }
+
+            try
+            {
+                File.Delete(textPath);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
             }
         }
     }
