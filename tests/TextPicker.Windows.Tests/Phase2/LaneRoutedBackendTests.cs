@@ -29,6 +29,40 @@ public sealed class LaneRoutedBackendTests
     }
 
     [Fact]
+    public async Task DefaultTimeout_AllowsColdReadWithinCandidateBudget()
+    {
+        using var backend = new LaneRoutedBackend((_, _) =>
+        {
+            Thread.Sleep(600);    // Word 冷启动实测最高约 600ms；仍处于 1500ms 候选总预算内
+            return FakeBackend.Ok();
+        });
+
+        var result = await backend.ReadAsync(
+            new BackendReadRequest { Origin = CaptureOrigin.Gesture, Generation = new SelectionGeneration(1) },
+            CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task ApplyTimeouts_ChangesSubsequentReadBudget()
+    {
+        using var backend = new LaneRoutedBackend((_, _) =>
+        {
+            Thread.Sleep(150);
+            return FakeBackend.Ok();
+        }, queryTimeout: TimeSpan.FromSeconds(2));
+        backend.ApplyTimeouts(TimeSpan.FromMilliseconds(80), TimeSpan.FromSeconds(2));
+
+        var result = await backend.ReadAsync(
+            new BackendReadRequest { Origin = CaptureOrigin.Gesture, Generation = new SelectionGeneration(1) },
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(CaptureFailureReason.BackendTimeout, result.Failure);
+    }
+
+    [Fact]
     public async Task AccessDeniedException_MapsToAccessDenied()
     {
         using var backend = new LaneRoutedBackend((_, _) => throw new UnauthorizedAccessException("0x80070005"), queryTimeout: TimeSpan.FromSeconds(2));

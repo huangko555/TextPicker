@@ -45,11 +45,12 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | 2 | 2026-08-23 | ✅ 102/102 全绿（Core 59 + Windows 43） | OwnedRawInputSource（自持线程+隐藏窗口+INPUTSINK+fail-fast）+ WM_INPUT 现场冒烟（SendInput 合成键盘实测可达）+ QueryRunner（超时/熔断/卡死置换/孤儿上限/quarantine）+ LaneRoutedBackend + 门面失效跟踪（Esc/点外/前台/TargetGone + 消费者豁免）+ WinEvent 焦点源 + 全屏暂停。局部决策见下。 |
 | 3 | 2026-08-23 | ✅ 111/111 全绿（Core 59 + Windows 52） | UiaSelectionBackend（ADR-5 全链：PID 判序/密码双查/父链/多 range 拒绝/截断/LocalContext/几何/方向权威/锚点链）+ CaretProbeChain 三级 + 托管 UIA 事件源（Lane 1）+ 观察者 lane（caret/state/probe/内容流）+ 进程内 WPF 宿主端到端 9 测试。局部决策见下。 |
 | 4 | 2026-08-23 | ✅ 111/111 全绿 + 面板启动冒烟通过 | WPF 调试面板（PMv2 manifest；常驻区：指针/相位/焦点/caret/剪贴板序列号/全屏/Counters；事件流：正文默认打码 sha256+长度、揭示开关永不落盘；交互区：五手势开关/排除进程/Probe/选项热更/内容流订阅/消费者窗口演示）。|
+| 5 | 2026-08-24 | ✅ 119/119 全绿；三态矩阵已记录 | 新增可重复运行的 SmokeRunner；修复 ClickSelection 与多击竞态、UIA stale element 回退、range owner 释放语义及超时配置热更。实机中未能稳定自动定位或需人工授权的场景保留为 Unknown，不据此宣称通过。 |
 
 ### Phase 1 执行期局部决策
 
 1. **键盘手势统一取抬起沿**：Ctrl+A 抬起触发为定案；Shift 键盘选择（VK 0x21..0x28）同样取 key-up——计划未明说，从一致性选择；key-down 自动重复不会重复触发。
-2. **IncompleteTimeout（500ms，实测标定 ≈501ms 经决策取整）落在门面候选外预算**：手势时刻起，读+settle 未按期完成 → `Failed(IncompleteTimeout)`、迟到结果丢弃（「已标记但迟迟未完成的选择取消」语义）；状态机保持纯消息时间钟域、无真实时间依赖。
+2. **IncompleteTimeout（1500ms）落在门面候选外预算**：Phase 5 实机观察到 Word 冷启动读取约 100–600ms，因此将 lane 查询预算校准为 1000ms、门面外预算校准为 1500ms（ADR-0006）；手势时刻起，读+settle 未按期完成 → `Failed(IncompleteTimeout)`、迟到结果丢弃（「已标记但迟迟未完成的选择取消」语义）；状态机保持纯消息时间钟域、无真实时间依赖。
 3. **打断动作双层语义**：候选在飞时 → `Failed(Interrupted)`（有 generation）；捕获完成后 Esc/点外/前台切换 → `Invalidated`（Phase 2 失效跟踪接线）。
 4. **状态机不做手势开关过滤**：单一过滤源在门面策略层（DefaultTargetPolicy），状态机输出全部已分类手势。
 5. **Arbiter 建模为双 lane**：Capture（手势 > 显式，串行）+ Observer（观察 > 流节拍，串行；流在飞上限 1 由 lane 串行天然成立）；40ms 合并窗口仅作用于同类未启动可合并项。
@@ -73,17 +74,19 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 
 | 场景 | 预期 | 结果 | 版本 |
 |---|---|---|---|
-| 记事本：拖选 / 双击 / 三击 / Ctrl+A / Shift+方向键 / 反向多行 | Captured，剪贴板序列号不变，锚点在释放端 | | |
-| Word：同上 + Ctrl+Shift+Home | 同上 | | |
-| Chrome 纯文本页 | 实测填三态（138+ 原生 UIA） | | |
-| Chrome 标准输入框 / contenteditable | 实测填三态 | | |
-| Chrome：跨域 iframe、Google Docs、PDF 查看器 | 实测填三态，不预设失败 | | |
-| Edge：同 Chrome 子集 | 实测填三态 | | |
-| 管理员记事本 | AccessDenied 可诊断 | | |
-| 全屏视频 / 游戏 | 自动暂停 | | |
-| 调试面板自身窗口划选 | 不产生候选（OwnProcess） | | |
-| RegisterConsumerWindow 演示：点击消费者按钮 | 不打断当前候选 | | |
-| 跨 DPI 显示器（主 100% ↔ 副 150%）选择 | 锚点在结束端附近且不越工作区 | | |
+| 记事本：拖选 / 双击 / 三击 / Ctrl+A / 反向多行 | Captured，剪贴板序列号不变，锚点在释放端 | **Known-good**；多轮实机烟测通过 | Windows 11 24H2 记事本 |
+| 记事本：Shift+方向键 | Captured，剪贴板序列号不变 | **Unknown**；合成输入未稳定触发候选，状态机单测通过 | Windows 11 24H2 记事本 |
+| Word：同上 + Ctrl+Shift+Home + 点击行首选整行 | 同上 | **Unknown**；框选曾成功，窗口遮挡及 UIA 冷启动使复跑不稳定 | Office16 Word |
+| Chrome 纯文本页 | Captured | **Known-good**；拖选、双击通过 | Chrome 151.0.4129.93 |
+| Chrome 标准输入框 / contenteditable | Captured | **Known-good**；两类拖选均通过 | Chrome 151.0.4129.93 |
+| Chrome：跨域 iframe、Google Docs、PDF 查看器 | 实测填三态，不预设失败 | **Unknown**；本轮未覆盖 | Chrome 151.0.4129.93 |
+| Edge：纯文本双击 | Captured | **Known-good** | Edge 151.0.7922.173 |
+| Edge：纯文本拖选 / 标准输入框 / contenteditable | Captured | **Known-bad**；均返回 EmptyText | Edge 151.0.7922.173 |
+| 管理员记事本 | AccessDenied 可诊断 | **Unknown**；提权助手已实现，未执行 UAC 烟测 | Windows 11 24H2 记事本 |
+| 全屏视频 / 游戏 | 自动暂停 | **Known-good**；全屏目标拖选未产生候选 | Windows 11 24H2 |
+| 调试面板自身窗口划选 | 不产生候选（OwnProcess） | **Known-good**；策略/契约测试覆盖 | TextPicker.App |
+| RegisterConsumerWindow 演示：点击消费者按钮 | 不打断当前候选 | **Known-good**；门面测试覆盖 | TextPicker.App |
+| 跨 DPI 显示器（主 100% ↔ 副 150%）选择 | 锚点在结束端附近且不越工作区 | **Unknown**；窗口移动成功，但合成坐标未稳定命中编辑区 | Windows 11 24H2 记事本 |
 
 ### Phase 2 执行期局部决策
 

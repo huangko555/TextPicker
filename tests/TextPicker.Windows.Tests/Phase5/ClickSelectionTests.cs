@@ -52,10 +52,10 @@ public sealed class ClickSelectionTests
         feed.RaisePlainClick(foregroundWindowHandle: 0x5555);
         ua.RaiseSelectionChanged();
 
-        await Task.Delay(200);
+        Assert.True(await PickerEventLog.EventuallyAsync(
+            () => picker.Counters.GestureDropsByReason.TryGetValue(GestureDropReason.ClickSelectionNoChange, out var drops) && drops >= 1));
         Assert.Empty(log.Candidates);
         Assert.Equal(0, picker.Counters.CandidatesPublished);
-        Assert.True(picker.Counters.GestureDropsByReason.TryGetValue(GestureDropReason.ClickSelectionNoChange, out var drops) && drops >= 1);
         picker.Stop();
     }
 
@@ -85,6 +85,24 @@ public sealed class ClickSelectionTests
         Assert.True(await PickerEventLog.EventuallyAsync(() => log.Captured.Count == 1));
         Assert.Single(log.Candidates);
         Assert.Equal(SelectionGesture.BoxSelect, log.Candidates[0].Gesture);
+        log.AssertLifecycleInvariants();
+        picker.Stop();
+    }
+
+    [Fact]
+    public async Task SelectionEventFromFirstClick_DoesNotRaceAheadOfMultiClick()
+    {
+        var (feed, ua, _, picker, log) = Create();
+
+        feed.RaisePlainClick(foregroundWindowHandle: 0x5555);
+        ua.RaiseSelectionChanged();
+        await Task.Delay(50);    // 第二击到来前，预检不得抢先发布 ClickSelection
+        feed.Raise(SelectionGesture.MultiClick, targetProcessId: 9999);
+
+        Assert.True(await PickerEventLog.EventuallyAsync(() => log.Captured.Count >= 1));
+        await Task.Delay(200);
+        Assert.Single(log.Candidates);
+        Assert.Equal(SelectionGesture.MultiClick, log.Candidates[0].Gesture);
         log.AssertLifecycleInvariants();
         picker.Stop();
     }

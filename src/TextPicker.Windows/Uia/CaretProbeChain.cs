@@ -103,7 +103,7 @@ internal sealed class CaretProbeChain
                 return default;
             }
 
-            var (textPattern, patternOwner, ownerFromWalk) = UiaCom.FindTextPattern(automation, element);
+            var (textPattern, patternOwner, ownerIsStart) = UiaCom.FindTextPattern(automation, element);
             owner = patternOwner;
             if (textPattern == null)
             {
@@ -141,7 +141,7 @@ internal sealed class CaretProbeChain
             }
             finally
             {
-                if (!ownerFromWalk)
+                if (!ownerIsStart)
                 {
                     UiaCom.ReleaseComObject(owner);
                 }

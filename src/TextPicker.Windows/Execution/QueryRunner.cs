@@ -24,8 +24,8 @@ internal readonly record struct QueryResult(QueryOutcome Outcome, object? Value,
 /// </summary>
 internal sealed class QueryRunner : IDisposable
 {
-    private readonly TimeSpan _timeout;
-    private readonly TimeSpan _circuitCooldown;
+    private TimeSpan _timeout;
+    private TimeSpan _circuitCooldown;
     private readonly int _maxOrphanWorkers;
     private readonly TimeProvider _time;
     private readonly object _gate = new();
@@ -51,11 +51,24 @@ internal sealed class QueryRunner : IDisposable
 
     public int WorkerCreationCount { get; private set; }
 
+    public void ApplyTimeouts(TimeSpan timeout, TimeSpan circuitCooldown)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThan(circuitCooldown, TimeSpan.Zero);
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _timeout = timeout;
+            _circuitCooldown = circuitCooldown;
+        }
+    }
+
     /// <summary>执行一次查询（串行；超时/熔断/隔离按 ADR-0006）。targetKey 用于卡死目标的 quarantine 判定。</summary>
     public QueryResult Run(Func<object?> work, string? targetKey = null, CancellationToken cancellation = default)
     {
         long requestId;
         Worker? worker;
+        TimeSpan timeout;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -87,10 +100,11 @@ internal sealed class QueryRunner : IDisposable
             requestId = ++_requestCounter;
             _activeRequestId = requestId;
             _activeRequestTimedOut = false;
+            timeout = _timeout;
         }
 
         worker.StartQuery(requestId, work, targetKey);
-        if (worker.WaitForResult(requestId, _timeout, out var result, out var error))
+        if (worker.WaitForResult(requestId, timeout, out var result, out var error))
         {
             lock (_gate)
             {

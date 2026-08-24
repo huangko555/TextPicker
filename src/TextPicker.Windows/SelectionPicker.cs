@@ -42,7 +42,14 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     // 点击型选区变化（ClickSelection）布防：普通单击 → UIA TextSelectionChanged 确认 → 非折叠预检 → 合成手势
     private ClickWatch? _clickWatch;
 
-    private readonly record struct ClickWatch(long ArmedTimestamp, long Epoch, int ProcessId, nint WindowHandle, PhysicalScreenPoint Down, PhysicalScreenPoint Up);
+    private readonly record struct ClickWatch(
+        long ArmedTimestamp,
+        long Epoch,
+        int ProcessId,
+        nint WindowHandle,
+        PhysicalScreenPoint Down,
+        PhysicalScreenPoint Up,
+        bool VerificationScheduled = false);
 
     // counters（string-free，ADR-0008）
     private long _candidatesPublished;
@@ -375,7 +382,16 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
 
         lock (_gate)
         {
-            _options = options;
+            _options = options with { };
+            if (_backend is LaneRoutedBackend routedBackend)
+            {
+                routedBackend.ApplyTimeouts(_options.QueryTimeout, _options.CircuitCooldown);
+            }
+
+            if (_observerLane is QueryRunnerObserverLane queryObserverLane)
+            {
+                queryObserverLane.ApplyTimeouts(_options.QueryTimeout, _options.CircuitCooldown);
+            }
 
             // 配置热变更使已捕获结果失效（Invalidated 原因之一：OptionsChanged）。
             if (_lastCapture?.Generation is { } gen && !_lastCaptureInvalidated)
@@ -486,10 +502,11 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
             if (kind == UaSignalKind.TextSelectionChanged)
             {
                 // 点击型选区变化：布防窗口内的选区变化事件 → 非折叠预检 → 合成 ClickSelection 手势。
-                if (_clickWatch is { } watch && _time.GetElapsedTime(watch.ArmedTimestamp, _time.GetTimestamp()) <= _options.ClickSelectionWindow)
+                if (_clickWatch is { VerificationScheduled: false } watch
+                    && _time.GetElapsedTime(watch.ArmedTimestamp, _time.GetTimestamp()) <= _options.ClickSelectionWindow)
                 {
-                    watchToVerify = watch;
-                    _clickWatch = null;    // 单发：一次布防只消费一次事件
+                    watchToVerify = watch with { VerificationScheduled = true };
+                    _clickWatch = watchToVerify;    // 单发：同一布防只安排一次验证
                 }
 
                 if (_contentSubscribers.Count > 0)
@@ -520,6 +537,20 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
     /// <summary>ClickSelection 防噪闸：确认焦点元素持有该进程的非折叠选区后才合成手势；否则静默丢弃计数。</summary>
     private async Task VerifyClickSelectionAsync(ClickWatch watch)
     {
+        // 第一击造成的 SelectionChanged 可能早于第二击的 MultiClick 手势。等过系统双击窗口，
+        // 让真实多击先清除布防，避免先发布 ClickSelection、随后又发布 MultiClick。
+        await Task.Delay(TimeSpan.FromMilliseconds(PInvoke.GetDoubleClickTime()), _time).ConfigureAwait(false);
+
+        lock (_gate)
+        {
+            if (!_running || watch.Epoch != _epoch || _clickWatch != watch)
+            {
+                return;
+            }
+
+            _clickWatch = null;
+        }
+
         bool nonCollapsed;
         try
         {
@@ -1026,7 +1057,10 @@ public sealed class SelectionPicker : ISelectionPicker, IDisposable
 
     private sealed class QueryRunnerObserverLane : IObserverLane
     {
-        private readonly Execution.QueryRunner _runner = new(TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(2));
+        private readonly Execution.QueryRunner _runner = new(TimeSpan.FromMilliseconds(1000), TimeSpan.FromSeconds(2));
+
+        public void ApplyTimeouts(TimeSpan queryTimeout, TimeSpan circuitCooldown)
+            => _runner.ApplyTimeouts(queryTimeout, circuitCooldown);
 
         public async Task<T> RunAsync<T>(Func<T> work, string? targetKey, CancellationToken ct)
         {

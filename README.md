@@ -16,6 +16,7 @@ src/
   TextPicker.Core/     契约、手势状态机、TextNormalizer、几何解析、身份/仲裁模型（纯 net10.0）
   TextPicker.Windows/  输入源 seam、caret 探针链、后端路由、三 lane 执行器、SelectionPicker 门面
   TextPicker.App/      WPF 调试面板（Phase 4 加入）
+  TextPicker.SmokeRunner/  Windows 实机烟测跑批器（会打开应用并注入鼠标键盘输入）
 tests/
   TextPicker.Core.Tests/
   TextPicker.Windows.Tests/
@@ -29,9 +30,11 @@ tests/
 ## 构建与测试
 
 ```
-dotnet build TextPicker.sln -c Debug
-dotnet test TextPicker.sln
+dotnet build TextPicker.slnx -c Debug
+dotnet test TextPicker.slnx
 ```
+
+实机烟测可按场景运行，例如 `dotnet run --project src/TextPicker.SmokeRunner -- notepad`。`admin` 会触发 UAC，且不会被 `all` 自动运行；其余可用场景见 `--help`。
 
 x64、`TreatWarningsAsErrors`、.NET 10（SDK 10.0.302，见 global.json）。
 

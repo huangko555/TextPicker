@@ -88,39 +88,51 @@ internal static class UiaCom
         var walker = automation.ControlViewWalker;
         IUIAutomationElement? current = start;
         bool owned = false;    // current 是否为本次遍历获得（start 归调用方）
-        for (int depth = 0; depth < maxDepth && current != null; depth++)
+        try
         {
-            object? patternObject = null;
-            try
+            for (int depth = 0; depth < maxDepth && current != null; depth++)
             {
-                var textPatternId = typeof(IUIAutomationTextPattern).GUID;
-                patternObject = current.GetCurrentPatternAs(UIA_PATTERN_ID.UIA_TextPatternId, in textPatternId);
-                if (patternObject is IUIAutomationTextPattern pattern)
+                object? patternObject = null;
+                try
                 {
-                    return (pattern, current, !owned);    // pattern 全新引用；current 所有权转移
+                    var textPatternId = typeof(IUIAutomationTextPattern).GUID;
+                    patternObject = current.GetCurrentPatternAs(UIA_PATTERN_ID.UIA_TextPatternId, in textPatternId);
+                    if (patternObject is IUIAutomationTextPattern pattern)
+                    {
+                        return (pattern, current, !owned);    // pattern 全新引用；current 所有权转移
+                    }
                 }
-            }
-            finally
-            {
-                if (patternObject is not IUIAutomationTextPattern)
+                finally
                 {
-                    ReleaseComObject(patternObject);
+                    if (patternObject is not IUIAutomationTextPattern)
+                    {
+                        ReleaseComObject(patternObject);
+                    }
                 }
+
+                var parent = walker.GetParentElement(current);
+                if (owned)
+                {
+                    ReleaseComObject(current);
+                }
+
+                current = parent;
+                owned = true;
             }
 
-            var parent = walker.GetParentElement(current);
+            if (owned && current != null)
+            {
+                ReleaseComObject(current);
+            }
+        }
+        catch
+        {
             if (owned)
             {
                 ReleaseComObject(current);
             }
 
-            current = parent;
-            owned = true;
-        }
-
-        if (owned && current != null)
-        {
-            ReleaseComObject(current);
+            throw;
         }
 
         return (null, null, false);

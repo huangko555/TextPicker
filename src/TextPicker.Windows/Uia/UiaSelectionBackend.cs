@@ -28,6 +28,20 @@ internal sealed class UiaSelectionBackend
             ? WaitForFreshness(request)
             : (SelectionFreshnessEvidence?)null;
 
+        var first = ReadCore(request, freshness, focusOnly: false, ct);
+        return !first.Success && first.Failure == CaptureFailureReason.BackendUnavailable
+            ? ReadCore(request, freshness, focusOnly: true, ct)
+            : first;
+    }
+
+    /// <summary>命中路径发生瞬时节点失效/无 TextPattern 时，以焦点元素重试一次；密码与 AccessDenied 不重试。</summary>
+    private static BackendReadResult ReadCore(
+        BackendReadRequest request,
+        SelectionFreshnessEvidence? freshness,
+        bool focusOnly,
+        CancellationToken ct)
+    {
+
         IUIAutomationElement? hitElement = null;
         IUIAutomationElement? focusedElement = null;
         IUIAutomationElement? patternOwner = null;
@@ -40,13 +54,25 @@ internal sealed class UiaSelectionBackend
 
             // 点查询前置：高完整性（管理员）目标在点查询上抛 E_ACCESSDENIED，先于焦点路径暴露真实原因（UIPI）。
             var point = request.UpPoint ?? request.Target.PointerPoint;
-            if (point is { } screenPoint)
+            if (!focusOnly && point is { } screenPoint)
             {
                 hitElement = automation.ElementFromPoint(new System.Drawing.Point((int)screenPoint.X, (int)screenPoint.Y));
-                if (hitElement != null && UiaCom.GetProcessId(hitElement) != request.Target.ProcessId)
+                if (hitElement != null)
                 {
-                    UiaCom.ReleaseComObject(hitElement);
-                    hitElement = null;    // 点命中他进程：走焦点链
+                    try
+                    {
+                        if (UiaCom.GetProcessId(hitElement) != request.Target.ProcessId)
+                        {
+                            UiaCom.ReleaseComObject(hitElement);
+                            hitElement = null;    // 点命中他进程：走焦点链
+                        }
+                    }
+                    catch (COMException exception) when (exception.HResult == unchecked((int)0x80040201))
+                    {
+                        // Office 会在选区变化后立即替换点命中的 UIA 节点；该节点失效时回退到焦点链。
+                        UiaCom.ReleaseComObject(hitElement);
+                        hitElement = null;
+                    }
                 }
             }
 
@@ -69,16 +95,35 @@ internal sealed class UiaSelectionBackend
                 }
             }
 
-            // 焦点不可见（常见于高完整性前台）：降级用命中元素。
+            // 命中元素优先；Office/浏览器的叶节点可能瞬时失效或不暴露 TextPattern，此时回退焦点链。
             var origin = hitElement ?? focusedElement;
             if (origin == null)
             {
                 return Fail(CaptureFailureReason.BackendUnavailable);
             }
 
-            var (textPattern, owner, ownerFromWalk) = UiaCom.FindTextPattern(automation, origin);
+            IUIAutomationTextPattern? textPattern;
+            IUIAutomationElement? owner;
+            bool foundOwnerIsStart;
+            try
+            {
+                (textPattern, owner, foundOwnerIsStart) = UiaCom.FindTextPattern(automation, origin);
+            }
+            catch (COMException exception) when (
+                exception.HResult == unchecked((int)0x80040201)
+                && hitElement != null
+                && focusedElement != null)
+            {
+                (textPattern, owner, foundOwnerIsStart) = UiaCom.FindTextPattern(automation, focusedElement);
+            }
+
+            if (textPattern == null && hitElement != null && focusedElement != null)
+            {
+                (textPattern, owner, foundOwnerIsStart) = UiaCom.FindTextPattern(automation, focusedElement);
+            }
+
             patternOwner = owner;
-            ownerIsStart = !ownerFromWalk;
+            ownerIsStart = foundOwnerIsStart;
             if (textPattern == null || patternOwner == null)
             {
                 return Fail(CaptureFailureReason.BackendUnavailable);
@@ -185,7 +230,7 @@ internal sealed class UiaSelectionBackend
                 return new TargetProbeResult { Success = true, Target = target };
             }
 
-            var (textPattern, patternOwner, ownerFromWalk) = UiaCom.FindTextPattern(automation, hitElement);
+            var (textPattern, patternOwner, ownerIsStart) = UiaCom.FindTextPattern(automation, hitElement);
             owner = patternOwner;
             if (textPattern == null)
             {
@@ -213,7 +258,7 @@ internal sealed class UiaSelectionBackend
             }
             finally
             {
-                if (!ownerFromWalk)
+                if (!ownerIsStart)
                 {
                     UiaCom.ReleaseComObject(owner);    // owner==hitElement 时由外层释放
                 }
@@ -252,7 +297,7 @@ internal sealed class UiaSelectionBackend
             }
 
             var pid = UiaCom.GetProcessId(focusedElement);
-            var (textPattern, patternOwner, ownerFromWalk) = UiaCom.FindTextPattern(automation, focusedElement);
+            var (textPattern, patternOwner, ownerIsStart) = UiaCom.FindTextPattern(automation, focusedElement);
             owner = patternOwner;
             if (textPattern == null)
             {
@@ -278,7 +323,7 @@ internal sealed class UiaSelectionBackend
             }
             finally
             {
-                if (!ownerFromWalk)
+                if (!ownerIsStart)
                 {
                     UiaCom.ReleaseComObject(owner);
                 }
@@ -503,7 +548,7 @@ internal static class ClickSelectionPrecheck
                 return false;
             }
 
-            var (textPattern, patternOwner, ownerFromWalk) = UiaCom.FindTextPattern(automation, element);
+            var (textPattern, patternOwner, ownerIsStart) = UiaCom.FindTextPattern(automation, element);
             owner = patternOwner;
             if (textPattern == null)
             {
@@ -523,7 +568,7 @@ internal static class ClickSelectionPrecheck
             }
             finally
             {
-                if (!ownerFromWalk)
+                if (!ownerIsStart)
                 {
                     UiaCom.ReleaseComObject(owner);
                 }

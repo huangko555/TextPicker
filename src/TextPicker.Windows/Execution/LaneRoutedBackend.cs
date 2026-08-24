@@ -22,13 +22,19 @@ internal sealed class LaneRoutedBackend : ISelectionBackend, IDisposable
     {
         ArgumentNullException.ThrowIfNull(reader);
         _reader = reader;
-        var timeout = queryTimeout ?? TimeSpan.FromMilliseconds(250);
+        var timeout = queryTimeout ?? TimeSpan.FromMilliseconds(1000);
         var cooldown = circuitCooldown ?? TimeSpan.FromSeconds(2);
         _captureRunner = new QueryRunner(timeout, cooldown, maxOrphanWorkers: 1, timeProvider);
         _observerRunner = new QueryRunner(timeout, cooldown, maxOrphanWorkers: 1, timeProvider);
     }
 
     internal int CaptureWorkerCreations => _captureRunner.WorkerCreationCount;
+
+    internal void ApplyTimeouts(TimeSpan queryTimeout, TimeSpan circuitCooldown)
+    {
+        _captureRunner.ApplyTimeouts(queryTimeout, circuitCooldown);
+        _observerRunner.ApplyTimeouts(queryTimeout, circuitCooldown);
+    }
 
     public async Task<BackendReadResult> ReadAsync(BackendReadRequest request, CancellationToken ct)
     {
