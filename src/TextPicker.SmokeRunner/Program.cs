@@ -35,7 +35,7 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|chrome-iframe|edge|edge-manual|word|word-manual|admin]");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|chrome-iframe|chrome-pdf|edge|edge-manual|word|word-manual|admin]");
             Console.WriteLine("all 不包含需要人工操作的跨 DPI、Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
@@ -69,6 +69,7 @@ internal sealed class SmokeRunner : IDisposable
                     case "dpi-manual": await CrossDpi(); break;
                     case "chrome": await Browser("chrome"); break;
                     case "chrome-iframe": await Browser("chrome", "iframe-manual"); break;
+                    case "chrome-pdf": await ChromePdf(); break;
                     case "edge": await Browser("edge", "manual"); break;
                     case "edge-manual": await Browser("edge", "manual"); break;
                     case "word": await Word(); break;
@@ -335,6 +336,29 @@ internal sealed class SmokeRunner : IDisposable
         await ExpectManualCapture("请单击第三行左侧页边距，使 Word 选中整行", SelectionGesture.ClickSelection);
 
         KillPid(pid);
+    }
+
+    private async Task ChromePdf()
+    {
+        var pdfPath = Path.Combine(AppContext.BaseDirectory, "Fixtures", "selection-smoke.pdf");
+        if (!File.Exists(pdfPath))
+        {
+            throw new FileNotFoundException("PDF 烟测夹具未复制到输出目录", pdfPath);
+        }
+
+        var profilePath = Path.Combine(Path.GetTempPath(), $"textpicker-smoke-chrome-pdf-{Environment.ProcessId}");
+        Directory.CreateDirectory(profilePath);
+        var pdfUrl = $"file:///{pdfPath.Replace('\\', '/')}";
+        var args = $"--user-data-dir=\"{profilePath}\" --no-first-run --disable-default-apps --app=\"{pdfUrl}\"";
+        var (hwnd, pid) = LaunchWindowed(@"C:\Program Files\Google\Chrome\Application\chrome.exe", args, "chrome", 15_000);
+        InputSynth.FocusWindow(hwnd);
+        InputSynth.PlaceWindow(hwnd, 120, 120, 1000, 760);
+        Thread.Sleep(2500);
+
+        await ExpectManualCapture("请在 PDF 浅蓝色框内的英文句子上手动拖选一次", SelectionGesture.BoxSelect);
+
+        KillPid(pid, entireProcessTree: true);
+        TryDeleteDirectory(profilePath);
     }
 
     private async Task AdminNotepad()

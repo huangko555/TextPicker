@@ -80,7 +80,8 @@ PMv2 manifest；常驻区（指针 / 手势相位 / 焦点目标卡片 / caret+�
 | Chrome 纯文本页 | Captured | **Known-good**；拖选、双击通过 | Chrome 151.0.4129.93 |
 | Chrome 标准输入框 / contenteditable | Captured | **Known-good**；两类拖选均通过 | Chrome 151.0.4129.93 |
 | Chrome：跨来源 iframe | Captured | **Known-good**；`data:` 不透明来源 iframe 人工拖选捕获 28 字符，几何端点完整 | Chrome 151.0.4129.93 |
-| Chrome：Google Docs、PDF 查看器 | 实测填三态，不预设失败 | **Unknown**；本轮未覆盖 | Chrome 151.0.4129.93 |
+| Chrome：PDF 查看器 | Captured | **Known-good**；本地确定性 PDF 人工拖选捕获 33 字符，几何端点完整 | Chrome 151.0.4129.93 |
+| Chrome：Google Docs | 实测填三态，不预设失败 | **Unknown**；本轮未覆盖 | Chrome 151.0.4129.93 |
 | Edge：纯文本双击 | Captured | **Known-good** | Edge 151.0.7922.173 |
 | Edge：纯文本拖选 / 标准输入框 / contenteditable | Captured | **Known-good**；人工拖选分别捕获 30 / 18 / 23 字符；先前 EmptyText 经确认是固定坐标未命中文字的测试误报 | Edge 151.0.7922.173 |
 | 管理员记事本 | AccessDenied 可诊断 | **Known-bad**；三轮 UAC 实测中普通权限进程无手势候选，显式捕获稳定返回 BackendUnavailable，点位 Probe 未稳定暴露 AccessDenied；需 uiAccess 或同完整性 broker 才能可靠支持 | Windows 11 24H2 记事本 |

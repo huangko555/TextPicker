@@ -14,4 +14,8 @@
     <ProjectReference Include="..\TextPicker.Windows\TextPicker.Windows.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Fixtures\selection-smoke.pdf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
