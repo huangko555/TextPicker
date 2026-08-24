@@ -35,7 +35,7 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|edge|edge-manual|word|word-manual|admin]");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|chrome-iframe|edge|edge-manual|word|word-manual|admin]");
             Console.WriteLine("all 不包含需要人工操作的跨 DPI、Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
@@ -68,6 +68,7 @@ internal sealed class SmokeRunner : IDisposable
                     case "dpi": await CrossDpi(); break;
                     case "dpi-manual": await CrossDpi(); break;
                     case "chrome": await Browser("chrome"); break;
+                    case "chrome-iframe": await Browser("chrome", "iframe-manual"); break;
                     case "edge": await Browser("edge", "manual"); break;
                     case "edge-manual": await Browser("edge", "manual"); break;
                     case "word": await Word(); break;
@@ -227,7 +228,10 @@ internal sealed class SmokeRunner : IDisposable
     private async Task Browser(string kind, string? only = null)
     {
         var htmlPath = Path.Combine(Path.GetTempPath(), "textpicker-smoke.html");
-        File.WriteAllText(htmlPath, "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font:18px sans-serif;margin:0}#p1{position:absolute;left:40px;top:40px}#p2{position:absolute;left:40px;top:100px}input{position:absolute;left:40px;top:180px;font-size:16px;width:420px}#editable{position:absolute;left:40px;top:260px;border:1px solid #999;padding:8px;width:520px}</style></head><body><p id=\"p1\">The quick brown fox jumps over the lazy dog again and again for the smoke test paragraph.</p><p id=\"p2\">Second paragraph with more words to drag across.</p><input value=\"standard input value text\"><div id=\"editable\" contenteditable=\"true\">contenteditable area text content</div></body></html>");
+        var html = only == "iframe-manual"
+            ? "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font:18px sans-serif;padding:30px}iframe{width:760px;height:240px;border:3px solid #4677d5}</style></head><body><h2>Cross-origin iframe smoke test</h2><iframe src=\"data:text/html,%3Cbody%20style%3D%27font%3A22px%20sans-serif%3Bpadding%3A30px%27%3ESelect%20this%20cross-origin%20iframe%20text%20with%20the%20mouse.%3C%2Fbody%3E\"></iframe></body></html>"
+            : "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{font:18px sans-serif;margin:0}#p1{position:absolute;left:40px;top:40px}#p2{position:absolute;left:40px;top:100px}input{position:absolute;left:40px;top:180px;font-size:16px;width:420px}#editable{position:absolute;left:40px;top:260px;border:1px solid #999;padding:8px;width:520px}</style></head><body><p id=\"p1\">The quick brown fox jumps over the lazy dog again and again for the smoke test paragraph.</p><p id=\"p2\">Second paragraph with more words to drag across.</p><input value=\"standard input value text\"><div id=\"editable\" contenteditable=\"true\">contenteditable area text content</div></body></html>";
+        File.WriteAllText(htmlPath, html);
 
         var exe = kind == "chrome"
             ? @"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -248,7 +252,11 @@ internal sealed class SmokeRunner : IDisposable
         var client = InputSynth.ClientOrigin(hwnd);
         int y1 = client.Y + 65;
 
-        if (only == "manual")
+        if (only == "iframe-manual")
+        {
+            await ExpectManualCapture("请在蓝色 iframe 边框内的英文上手动拖选一次", SelectionGesture.BoxSelect);
+        }
+        else if (only == "manual")
         {
             await ExpectManualCapture("请在第一行普通文字上手动拖选一次");
             await ExpectManualCapture("请在页面中间的标准输入框内手动拖选一次");
