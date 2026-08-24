@@ -51,6 +51,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Copy-Item -LiteralPath (Join-Path $repoRoot "README.md") -Destination $publishDirectory
+Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination $publishDirectory
 Compress-Archive -Path (Join-Path $publishDirectory "*") -DestinationPath $archivePath -CompressionLevel Optimal
 
 $archive = Get-Item -LiteralPath $archivePath
