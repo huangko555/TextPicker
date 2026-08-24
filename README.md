@@ -42,6 +42,10 @@ dotnet test TextPicker.slnx
 
 x64、`TreatWarningsAsErrors`、.NET 10（SDK 10.0.302，见 global.json）。
 
+## 发布
+
+运行 `pwsh -File scripts/publish.ps1` 可生成 `win-x64` 自包含发布目录、ZIP 和 SHA-256 校验文件；产物位于 `artifacts/`，文件名包含 `Directory.Build.props` 中的版本号。需要覆盖版本时使用 `-Version 1.0.1`。
+
 ## 证据基础
 
 交互阈值与时序常量为 v6.1 设计案冻结的标定值；平台事实（UIA/Raw Input 行为）有微软文档与 InputCue 生产代码佐证。目标消费者为 Peeko（划词翻译）与 InputCue（输入状态提示），v1 不接入。
