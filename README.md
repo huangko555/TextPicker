@@ -34,7 +34,7 @@ dotnet build TextPicker.slnx -c Debug
 dotnet test TextPicker.slnx
 ```
 
-实机烟测可按场景运行，例如 `dotnet run --project src/TextPicker.SmokeRunner -- notepad`。`notepad-keyboard`、`dpi`、`chrome-iframe`、`chrome-pdf`、`edge`、`word` 使用人工操作提示；`admin` 会触发 UAC，并用于复现当前无 `uiAccess` 模式对管理员窗口的 Known-bad 边界。这些人工场景均不会被 `all` 自动运行，其余可用场景见 `--help`。
+实机烟测可按场景运行，例如 `dotnet run --project src/TextPicker.SmokeRunner -- notepad`。`notepad-keyboard`、`dpi`、`chrome-iframe`、`chrome-pdf`、`google-docs`、`edge`、`word` 使用人工操作提示；`google-docs` 打开公开示例文档并启用屏幕阅读器支持，不登录、不创建或修改云端文件，用于复现当前 UIA `EmptySelection` 的 Known-bad 边界。`admin` 会触发 UAC，并用于复现当前无 `uiAccess` 模式对管理员窗口的 Known-bad 边界。这些人工场景均不会被 `all` 自动运行，其余可用场景见 `--help`。
 
 x64、`TreatWarningsAsErrors`、.NET 10（SDK 10.0.302，见 global.json）。
 

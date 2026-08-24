@@ -35,7 +35,7 @@ internal sealed class SmokeRunner : IDisposable
     {
         if (scenario is "--help" or "-h" or "help")
         {
-            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|chrome-iframe|chrome-pdf|edge|edge-manual|word|word-manual|admin]");
+            Console.WriteLine("用法：TextPicker.SmokeRunner [all|notepad|notepad-keyboard|fullscreen|ownproc|dpi|dpi-manual|chrome|chrome-iframe|chrome-pdf|google-docs|edge|edge-manual|word|word-manual|admin]");
             Console.WriteLine("all 不包含需要人工操作的跨 DPI、Edge、Word 和 UAC admin 场景；多个场景可用逗号连接。");
             return 0;
         }
@@ -70,6 +70,7 @@ internal sealed class SmokeRunner : IDisposable
                     case "chrome": await Browser("chrome"); break;
                     case "chrome-iframe": await Browser("chrome", "iframe-manual"); break;
                     case "chrome-pdf": await ChromePdf(); break;
+                    case "google-docs": await GoogleDocsManual(); break;
                     case "edge": await Browser("edge", "manual"); break;
                     case "edge-manual": await Browser("edge", "manual"); break;
                     case "word": await Word(); break;
@@ -356,6 +357,30 @@ internal sealed class SmokeRunner : IDisposable
         Thread.Sleep(2500);
 
         await ExpectManualCapture("请在 PDF 浅蓝色框内的英文句子上手动拖选一次", SelectionGesture.BoxSelect);
+
+        KillPid(pid, entireProcessTree: true);
+        TryDeleteDirectory(profilePath);
+    }
+
+    private async Task GoogleDocsManual()
+    {
+        const string documentUrl = "https://docs.google.com/document/d/1S8gJeCD_vDjbM2JKk8Ojkt-6Uj_fdn_NQPdzHeQnn0Y/edit";
+        var profilePath = Path.Combine(Path.GetTempPath(), $"textpicker-smoke-google-docs-{Environment.ProcessId}");
+        Directory.CreateDirectory(profilePath);
+        var args = $"--user-data-dir=\"{profilePath}\" --no-first-run --disable-default-apps --app=\"{documentUrl}\"";
+        var (hwnd, pid) = LaunchWindowed(@"C:\Program Files\Google\Chrome\Application\chrome.exe", args, "chrome", 15_000);
+        InputSynth.FocusWindow(hwnd);
+        InputSynth.PlaceWindow(hwnd, 120, 120, 1100, 760);
+        Thread.Sleep(5000);
+
+        InputSynth.Key(InputSynth.VK_CONTROL, down: true);
+        InputSynth.Key(InputSynth.VK_MENU, down: true);
+        InputSynth.KeyTap(0x5A, holdMs: 50);    // Google Docs: Ctrl+Alt+Z 开启屏幕阅读器支持
+        InputSynth.Key(InputSynth.VK_MENU, down: false);
+        InputSynth.Key(InputSynth.VK_CONTROL, down: false);
+        Thread.Sleep(1200);
+
+        await ExpectManualCapture("已开启屏幕阅读器支持；请再次在 Google Docs 正文上拖选", SelectionGesture.BoxSelect);
 
         KillPid(pid, entireProcessTree: true);
         TryDeleteDirectory(profilePath);
