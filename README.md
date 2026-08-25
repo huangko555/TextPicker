@@ -1,6 +1,6 @@
 # TextPicker
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Windows「选区观察」共享深模块（C# / .NET 10）：检测任意应用中的文本选择手势（拖选 / 双击 / 多击 / Shift+点击 / Ctrl+A / Shift+方向键），经 UI Automation 读取选区内容与几何，方向感知锚点，两阶段发布（先候选后正文），不可变结果。附带一个 WPF 调试面板作为第一个消费者。
 
@@ -49,4 +49,4 @@ x64、`TreatWarningsAsErrors`、.NET 10（SDK 10.0.302，见 global.json）。
 
 ## 许可证
 
-本项目采用 [GNU General Public License v3.0 only](LICENSE)（SPDX：`GPL-3.0-only`）。Copyright © 2026 huangko555。
+本项目采用 [MIT License](LICENSE)（SPDX：`MIT`）。Copyright © 2026 huangko555。
